@@ -3,11 +3,28 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 function CameraCapture({ onCapture }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
-  const [stream, setStream] = useState(null)
+  const streamRef = useRef(null)
   const [error, setError] = useState(null)
 
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
+  }, [])
+
   const startCamera = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('Camera is not available in this browser. Upload an image instead.')
+      return
+    }
+
     try {
+      stopCamera()
+      setError(null)
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
@@ -15,23 +32,19 @@ function CameraCapture({ onCapture }) {
           height: { ideal: 1080 }
         }
       })
-      setStream(mediaStream)
+      streamRef.current = mediaStream
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream
       }
     } catch (err) {
-      setError('Camera access denied. Please allow camera permissions.')
+      setError('Camera access denied. Upload an image or allow camera permissions.')
     }
-  }, [])
+  }, [stopCamera])
 
   useEffect(() => {
     startCamera()
-    return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop())
-      }
-    }
-  }, [])
+    return stopCamera
+  }, [startCamera, stopCamera])
 
   const capture = () => {
     if (!videoRef.current || !canvasRef.current) return
@@ -45,7 +58,7 @@ function CameraCapture({ onCapture }) {
     ctx.drawImage(video, 0, 0)
     
     canvas.toBlob((blob) => {
-      onCapture(blob)
+      if (blob) onCapture(blob)
     }, 'image/jpeg', 0.95)
   }
 

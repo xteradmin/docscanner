@@ -1,9 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import CameraCapture from '../modules/camera/CameraCapture'
+import ImageUpload from '../modules/camera/ImageUpload'
 import DocumentDetector from '../modules/detection/DocumentDetector'
 import PerspectiveTransform from '../modules/perspective/PerspectiveTransform'
 import ImageFilters from '../modules/filters/ImageFilters'
 import ExportPanel from '../modules/export/ExportPanel'
+
+const MAGNIFIER_ZOOM = 3
 
 function ScannerPage() {
   const [step, setStep] = useState('capture')
@@ -22,9 +25,16 @@ function ScannerPage() {
   const containerRef = useRef(null)
 
   const handleCapture = async (blob) => {
+    if (!blob) return
+
+    if (capturedImageUrl) URL.revokeObjectURL(capturedImageUrl)
+    if (processedImageUrl) URL.revokeObjectURL(processedImageUrl)
+
     setCapturedImage(blob)
     const url = URL.createObjectURL(blob)
     setCapturedImageUrl(url)
+    setProcessedImage(null)
+    setProcessedImageUrl(null)
     setIsProcessing(true)
     try {
       const detectedCorners = await DocumentDetector.detectDocument(blob)
@@ -196,6 +206,27 @@ function ScannerPage() {
     }
   }
 
+  const getMagnifierLensStyle = () => {
+    const corner = corners?.[activeCorner]
+    const imageRect = imageRef.current?.getBoundingClientRect()
+
+    if (!capturedImageUrl || !corner || !imageRect) {
+      return {}
+    }
+
+    const backgroundWidth = imageRect.width * MAGNIFIER_ZOOM
+    const backgroundHeight = imageRect.height * MAGNIFIER_ZOOM
+    const focusX = corner.x * backgroundWidth
+    const focusY = corner.y * backgroundHeight
+
+    return {
+      backgroundImage: `url(${capturedImageUrl})`,
+      backgroundPosition: `calc(var(--magnifier-size) / 2 - ${focusX}px) calc(var(--magnifier-size) / 2 - ${focusY}px)`,
+      backgroundSize: `${backgroundWidth}px ${backgroundHeight}px`,
+      backgroundRepeat: 'no-repeat'
+    }
+  }
+
   return (
     <div className="scanner-app">
       <div className="top-bar">
@@ -204,7 +235,10 @@ function ScannerPage() {
 
       {step === 'capture' && (
         <div className="capture-step">
-          <CameraCapture onCapture={handleCapture} />
+          <div className="capture-grid">
+            <CameraCapture onCapture={handleCapture} />
+            <ImageUpload onCapture={handleCapture} disabled={isProcessing} />
+          </div>
           {isProcessing && (
             <div className="processing-overlay">
               <div className="spinner"></div>
@@ -264,12 +298,7 @@ function ScannerPage() {
             >
               <div
                 className="magnifier-lens"
-                style={{
-                  backgroundImage: `url(${capturedImageUrl})`,
-                  backgroundPosition: `${corners[activeCorner].x * 100}% ${corners[activeCorner].y * 100}%`,
-                  backgroundSize: '300%',
-                  backgroundRepeat: 'no-repeat'
-                }}
+                style={getMagnifierLensStyle()}
               >
                 <div className="magnifier-cross"></div>
               </div>
@@ -414,7 +443,7 @@ function ScannerPage() {
           <div className="pages-grid">
             {pages.map((page, index) => (
               <div key={page.id} className="page-card">
-                <img src={URL.createObjectURL(page.image)} alt={`Page ${index + 1}`} />
+                <PageThumbnail image={page.image} alt={`Page ${index + 1}`} />
                 <div className="page-actions">
                   <span className="page-number">#{index + 1}</span>
                   {index > 0 && (
@@ -433,6 +462,18 @@ function ScannerPage() {
       )}
     </div>
   )
+}
+
+function PageThumbnail({ image, alt }) {
+  const [url, setUrl] = useState(null)
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(image)
+    setUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [image])
+
+  return url ? <img src={url} alt={alt} /> : null
 }
 
 function FilterSlider({ label, min, max, step, defaultValue, onApply }) {

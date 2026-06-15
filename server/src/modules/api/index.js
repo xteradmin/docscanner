@@ -18,7 +18,9 @@ router.post('/pdf/generate', upload.array('images', 20), async (req, res) => {
     const pdfDoc = await PDFDocument.create()
     
     for (const file of req.files) {
-      const image = await pdfDoc.embedJpg(file.buffer)
+      const image = file.mimetype === 'image/png'
+        ? await pdfDoc.embedPng(file.buffer)
+        : await pdfDoc.embedJpg(file.buffer)
       const page = pdfDoc.addPage([image.width, image.height])
       page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height })
     }

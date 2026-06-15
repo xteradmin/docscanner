@@ -1,6 +1,6 @@
 const ImageFilters = {
   async applyFilter(imageBlob, filterName, value = 1) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const img = new Image()
       img.onload = () => {
         const canvas = document.createElement('canvas')
@@ -39,7 +39,17 @@ const ImageFilters = {
 
         ctx.putImageData(imageData, 0, 0)
         URL.revokeObjectURL(img.src)
-        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.95)
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob)
+          } else {
+            reject(new Error('Unable to create filtered image'))
+          }
+        }, 'image/jpeg', 0.95)
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src)
+        reject(new Error('Unable to load image for filtering'))
       }
       img.src = URL.createObjectURL(imageBlob)
     })
