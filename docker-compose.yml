@@ -1,0 +1,23 @@
+services:
+  docscanner:
+    build: .
+    container_name: docscanner
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    volumes:
+      - docscanner-data:/data/docscanner
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET:-change-this-secret}
+      - UPLOAD_DIR=/data/docscanner/uploads
+      - DB_PATH=/data/docscanner/db.sqlite
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  docscanner-data:
