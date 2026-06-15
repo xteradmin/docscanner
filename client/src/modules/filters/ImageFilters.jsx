@@ -67,7 +67,8 @@ const ImageFilters = {
 
   contrast(imageData, value) {
     const { data } = imageData
-    const factor = (259 * (value * 255 + 255)) / (255 * (259 - value * 255))
+    const contrast = (value - 1) * 255
+    const factor = (259 * (contrast + 255)) / (255 * (259 - contrast))
     for (let i = 0; i < data.length; i += 4) {
       data[i] = Math.min(255, Math.max(0, factor * (data[i] - 128) + 128))
       data[i + 1] = Math.min(255, Math.max(0, factor * (data[i + 1] - 128) + 128))
@@ -86,6 +87,8 @@ const ImageFilters = {
   },
 
   sharpen(imageData, width, height, value) {
+    if (value === 0) return
+
     const { data } = imageData
     const kernel = [
       0, -1, 0,
@@ -95,6 +98,7 @@ const ImageFilters = {
     const strength = value
 
     const output = new Uint8ClampedArray(data.length)
+    output.set(data)
     for (let y = 1; y < height - 1; y++) {
       for (let x = 1; x < width - 1; x++) {
         for (let c = 0; c < 3; c++) {

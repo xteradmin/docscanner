@@ -13,6 +13,7 @@ function ScannerPage() {
   const [capturedImage, setCapturedImage] = useState(null)
   const [capturedImageUrl, setCapturedImageUrl] = useState(null)
   const [corners, setCorners] = useState(null)
+  const [filterSourceImage, setFilterSourceImage] = useState(null)
   const [processedImage, setProcessedImage] = useState(null)
   const [processedImageUrl, setProcessedImageUrl] = useState(null)
   const [pages, setPages] = useState([])
@@ -33,6 +34,7 @@ function ScannerPage() {
     setCapturedImage(blob)
     const url = URL.createObjectURL(blob)
     setCapturedImageUrl(url)
+    setFilterSourceImage(null)
     setProcessedImage(null)
     setProcessedImageUrl(null)
     setIsProcessing(true)
@@ -128,6 +130,7 @@ function ScannerPage() {
     setIsProcessing(true)
     try {
       const warped = await PerspectiveTransform.warpPerspective(capturedImage, corners)
+      setFilterSourceImage(warped)
       setProcessedImage(warped)
       const url = URL.createObjectURL(warped)
       setProcessedImageUrl(url)
@@ -139,10 +142,10 @@ function ScannerPage() {
   }
 
   const applyFilter = async (filterName, value) => {
-    if (!processedImage) return
+    if (!filterSourceImage) return
     setIsProcessing(true)
     try {
-      const result = await ImageFilters.applyFilter(processedImage, filterName, value)
+      const result = await ImageFilters.applyFilter(filterSourceImage, filterName, value)
       if (processedImageUrl) URL.revokeObjectURL(processedImageUrl)
       setProcessedImage(result)
       const url = URL.createObjectURL(result)
@@ -151,6 +154,21 @@ function ScannerPage() {
       console.error('Filter failed:', err)
     }
     setIsProcessing(false)
+  }
+
+  const resetFilters = () => {
+    if (!filterSourceImage) return
+    if (processedImageUrl) URL.revokeObjectURL(processedImageUrl)
+    setProcessedImage(filterSourceImage)
+    setProcessedImageUrl(URL.createObjectURL(filterSourceImage))
+  }
+
+  const goBackToCrop = () => {
+    if (processedImageUrl) URL.revokeObjectURL(processedImageUrl)
+    setFilterSourceImage(null)
+    setProcessedImage(null)
+    setProcessedImageUrl(null)
+    setStep('crop')
   }
 
   const addToDocument = () => {
@@ -176,6 +194,7 @@ function ScannerPage() {
     setCapturedImage(null)
     setCapturedImageUrl(null)
     setCorners(null)
+    setFilterSourceImage(null)
     setProcessedImage(null)
     setProcessedImageUrl(null)
     setStep('capture')
@@ -360,6 +379,10 @@ function ScannerPage() {
             <div className="filter-group">
               <h3>Quick Presets</h3>
               <div className="preset-grid">
+                <button className="preset-btn" onClick={resetFilters}>
+                  <span className="preset-icon">1:1</span>
+                  <span className="preset-name">Original</span>
+                </button>
                 <button className="preset-btn" onClick={() => applyFilter('enhance', 1)}>
                   <span className="preset-icon">✨</span>
                   <span className="preset-name">Auto</span>
@@ -431,7 +454,7 @@ function ScannerPage() {
           </div>
 
           <div className="action-buttons">
-            <button className="btn-secondary" onClick={() => { setProcessedImage(null); setProcessedImageUrl(null); setStep('crop') }}>Back</button>
+            <button className="btn-secondary" onClick={goBackToCrop}>Back</button>
             <button className="btn-primary" onClick={addToDocument}>Add to Document</button>
           </div>
         </div>
