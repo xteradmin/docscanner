@@ -1,15 +1,19 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import CameraCapture from '../modules/camera/CameraCapture'
+import ImageUpload from '../modules/camera/ImageUpload'
 import DocumentDetector from '../modules/detection/DocumentDetector'
 import PerspectiveTransform from '../modules/perspective/PerspectiveTransform'
 import ImageFilters from '../modules/filters/ImageFilters'
 import ExportPanel from '../modules/export/ExportPanel'
+
+const MAGNIFIER_ZOOM = 3
 
 function ScannerPage() {
   const [step, setStep] = useState('capture')
   const [capturedImage, setCapturedImage] = useState(null)
   const [capturedImageUrl, setCapturedImageUrl] = useState(null)
   const [corners, setCorners] = useState(null)
+  const [filterSourceImage, setFilterSourceImage] = useState(null)
   const [processedImage, setProcessedImage] = useState(null)
   const [processedImageUrl, setProcessedImageUrl] = useState(null)
   const [pages, setPages] = useState([])
@@ -18,13 +22,23 @@ function ScannerPage() {
   const [magnifierPos, setMagnifierPos] = useState({ x: 0, y: 0 })
   const [showMagnifier, setShowMagnifier] = useState(false)
   const [filterView, setFilterView] = useState('full')
+  const [filterControlsTab, setFilterControlsTab] = useState('presets')
   const imageRef = useRef(null)
   const containerRef = useRef(null)
+  const filterRequestId = useRef(0)
 
   const handleCapture = async (blob) => {
+    if (!blob) return
+
+    if (capturedImageUrl) URL.revokeObjectURL(capturedImageUrl)
+    if (processedImageUrl) URL.revokeObjectURL(processedImageUrl)
+
     setCapturedImage(blob)
     const url = URL.createObjectURL(blob)
     setCapturedImageUrl(url)
+    setFilterSourceImage(null)
+    setProcessedImage(null)
+    setProcessedImageUrl(null)
     setIsProcessing(true)
     try {
       const detectedCorners = await DocumentDetector.detectDocument(blob)
@@ -118,9 +132,11 @@ function ScannerPage() {
     setIsProcessing(true)
     try {
       const warped = await PerspectiveTransform.warpPerspective(capturedImage, corners)
+      setFilterSourceImage(warped)
       setProcessedImage(warped)
       const url = URL.createObjectURL(warped)
       setProcessedImageUrl(url)
+      setFilterControlsTab('presets')
       setStep('filter')
     } catch (err) {
       console.error('Processing failed:', err)
@@ -129,52 +145,88 @@ function ScannerPage() {
   }
 
   const applyFilter = async (filterName, value) => {
-    if (!processedImage) return
+    if (!filterSourceImage) return
+    const requestId = filterRequestId.current + 1
+    filterRequestId.current = requestId
     setIsProcessing(true)
     try {
-      const result = await ImageFilters.applyFilter(processedImage, filterName, value)
+      const result = await ImageFilters.applyFilter(filterSourceImage, filterName, value)
+      if (requestId !== filterRequestId.current) {
+        return
+      }
       if (processedImageUrl) URL.revokeObjectURL(processedImageUrl)
       setProcessedImage(result)
       const url = URL.createObjectURL(result)
       setProcessedImageUrl(url)
     } catch (err) {
       console.error('Filter failed:', err)
+    } finally {
+      if (requestId === filterRequestId.current) {
+        setIsProcessing(false)
+      }
     }
-    setIsProcessing(false)
   }
 
-  const addToDocument = () => {
-    if (!processedImage) return
-    setPages(prev => [...prev, { id: Date.now(), image: processedImage }])
-    resetAll()
+  const resetFilters = () => {
+    if (!filterSourceImage) return
+    filterRequestId.current += 1
+    if (processedImageUrl) URL.revokeObjectURL(processedImageUrl)
+    setProcessedImage(filterSourceImage)
+    setProcessedImageUrl(URL.createObjectURL(filterSourceImage))
   }
 
-  const downloadSingle = (blob, filename) => {
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+  const goBackToCrop = () => {
+    filterRequestId.current += 1
+    if (processedImageUrl) URL.revokeObjectURL(processedImageUrl)
+    setFilterSourceImage(null)
+    setProcessedImage(null)
+    setProcessedImageUrl(null)
+    setStep('crop')
   }
 
-  const resetAll = () => {
+  const clearCurrentScan = () => {
+    filterRequestId.current += 1
     if (capturedImageUrl) URL.revokeObjectURL(capturedImageUrl)
     if (processedImageUrl) URL.revokeObjectURL(processedImageUrl)
     setCapturedImage(null)
     setCapturedImageUrl(null)
     setCorners(null)
+    setFilterSourceImage(null)
     setProcessedImage(null)
     setProcessedImageUrl(null)
-    setStep('capture')
     setActiveCorner(null)
     setShowMagnifier(false)
   }
 
+  const resetAll = () => {
+    clearCurrentScan()
+    setStep('capture')
+  }
+
+  const addToDocument = () => {
+    if (!processedImage) return
+    setPages(prev => [...prev, { id: Date.now(), image: processedImage }])
+    clearCurrentScan()
+    setStep('document')
+  }
+
+  const addAnotherImage = () => {
+    clearCurrentScan()
+    setStep('capture')
+  }
+
+  const startNewDocument = () => {
+    clearCurrentScan()
+    setPages([])
+    setStep('capture')
+  }
+
   const removePage = (id) => {
-    setPages(prev => prev.filter(p => p.id !== id))
+    setPages(prev => {
+      const nextPages = prev.filter(p => p.id !== id)
+      if (nextPages.length === 0) setStep('capture')
+      return nextPages
+    })
   }
 
   const movePage = (fromIndex, toIndex) => {
@@ -196,6 +248,27 @@ function ScannerPage() {
     }
   }
 
+  const getMagnifierLensStyle = () => {
+    const corner = corners?.[activeCorner]
+    const imageRect = imageRef.current?.getBoundingClientRect()
+
+    if (!capturedImageUrl || !corner || !imageRect) {
+      return {}
+    }
+
+    const backgroundWidth = imageRect.width * MAGNIFIER_ZOOM
+    const backgroundHeight = imageRect.height * MAGNIFIER_ZOOM
+    const focusX = corner.x * backgroundWidth
+    const focusY = corner.y * backgroundHeight
+
+    return {
+      backgroundImage: `url(${capturedImageUrl})`,
+      backgroundPosition: `calc(var(--magnifier-size) / 2 - ${focusX}px) calc(var(--magnifier-size) / 2 - ${focusY}px)`,
+      backgroundSize: `${backgroundWidth}px ${backgroundHeight}px`,
+      backgroundRepeat: 'no-repeat'
+    }
+  }
+
   return (
     <div className="scanner-app">
       <div className="top-bar">
@@ -204,7 +277,18 @@ function ScannerPage() {
 
       {step === 'capture' && (
         <div className="capture-step">
-          <CameraCapture onCapture={handleCapture} />
+          <div className="capture-grid">
+            <CameraCapture onCapture={handleCapture} />
+            <ImageUpload onCapture={handleCapture} disabled={isProcessing} />
+          </div>
+          {pages.length > 0 && (
+            <div className="draft-return">
+              <span>{pages.length} {pages.length === 1 ? 'page' : 'pages'} in current document</span>
+              <button className="btn-secondary" onClick={() => setStep('document')}>
+                Back to document
+              </button>
+            </div>
+          )}
           {isProcessing && (
             <div className="processing-overlay">
               <div className="spinner"></div>
@@ -264,12 +348,7 @@ function ScannerPage() {
             >
               <div
                 className="magnifier-lens"
-                style={{
-                  backgroundImage: `url(${capturedImageUrl})`,
-                  backgroundPosition: `${corners[activeCorner].x * 100}% ${corners[activeCorner].y * 100}%`,
-                  backgroundSize: '300%',
-                  backgroundRepeat: 'no-repeat'
-                }}
+                style={getMagnifierLensStyle()}
               >
                 <div className="magnifier-cross"></div>
               </div>
@@ -328,9 +407,34 @@ function ScannerPage() {
           </div>
 
           <div className="filter-controls">
-            <div className="filter-group">
-              <h3>Quick Presets</h3>
-              <div className="preset-grid">
+            <div className="filter-tabs" role="tablist" aria-label="Filter controls">
+              <button
+                className={`filter-tab ${filterControlsTab === 'presets' ? 'active' : ''}`}
+                type="button"
+                role="tab"
+                aria-selected={filterControlsTab === 'presets'}
+                onClick={() => setFilterControlsTab('presets')}
+              >
+                Presets
+              </button>
+              <button
+                className={`filter-tab ${filterControlsTab === 'manual' ? 'active' : ''}`}
+                type="button"
+                role="tab"
+                aria-selected={filterControlsTab === 'manual'}
+                onClick={() => setFilterControlsTab('manual')}
+              >
+                Manual
+              </button>
+            </div>
+
+            {filterControlsTab === 'presets' && (
+              <div className="filter-group" role="tabpanel">
+                <div className="preset-grid">
+                <button className="preset-btn" onClick={resetFilters}>
+                  <span className="preset-icon">1:1</span>
+                  <span className="preset-name">Original</span>
+                </button>
                 <button className="preset-btn" onClick={() => applyFilter('enhance', 1)}>
                   <span className="preset-icon">✨</span>
                   <span className="preset-name">Auto</span>
@@ -355,66 +459,70 @@ function ScannerPage() {
                   <span className="preset-icon">🎨</span>
                   <span className="preset-name">Vivid</span>
                 </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="filter-group">
-              <h3>Manual</h3>
-              <FilterSlider
-                label="Brightness"
-                min={0.5}
-                max={1.5}
-                step={0.01}
-                defaultValue={1}
-                onApply={(v) => applyFilter('brightness', v)}
-              />
-              <FilterSlider
-                label="Contrast"
-                min={0.5}
-                max={1.5}
-                step={0.01}
-                defaultValue={1}
-                onApply={(v) => applyFilter('contrast', v)}
-              />
-              <FilterSlider
-                label="Saturation"
-                min={0}
-                max={2}
-                step={0.01}
-                defaultValue={1}
-                onApply={(v) => applyFilter('saturation', v)}
-              />
-              <FilterSlider
-                label="Sharpen"
-                min={0}
-                max={1}
-                step={0.01}
-                defaultValue={0}
-                onApply={(v) => applyFilter('sharpen', v)}
-              />
-            </div>
-          </div>
-
-          <div className="quick-download">
-            <button className="btn-download" onClick={() => downloadSingle(processedImage, 'document.jpg')}>
-              ⬇️ Download JPG
-            </button>
+            {filterControlsTab === 'manual' && (
+              <div className="filter-group" role="tabpanel">
+                <FilterSlider
+                  label="Brightness"
+                  min={0.5}
+                  max={1.5}
+                  step={0.01}
+                  defaultValue={1}
+                  onApply={(v) => applyFilter('brightness', v)}
+                />
+                <FilterSlider
+                  label="Contrast"
+                  min={0.5}
+                  max={1.5}
+                  step={0.01}
+                  defaultValue={1}
+                  onApply={(v) => applyFilter('contrast', v)}
+                />
+                <FilterSlider
+                  label="Saturation"
+                  min={0}
+                  max={2}
+                  step={0.01}
+                  defaultValue={1}
+                  onApply={(v) => applyFilter('saturation', v)}
+                />
+                <FilterSlider
+                  label="Sharpen"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  defaultValue={0}
+                  onApply={(v) => applyFilter('sharpen', v)}
+                />
+              </div>
+            )}
           </div>
 
           <div className="action-buttons">
-            <button className="btn-secondary" onClick={() => { setProcessedImage(null); setProcessedImageUrl(null); setStep('crop') }}>Back</button>
-            <button className="btn-primary" onClick={addToDocument}>Add to Document</button>
+            <button className="btn-secondary" onClick={goBackToCrop}>Back</button>
+            <button className="btn-primary" onClick={addToDocument}>Add page to document</button>
           </div>
         </div>
       )}
 
-      {pages.length > 0 && (
-        <div className="pages-section">
-          <h2>Document ({pages.length})</h2>
+      {step === 'document' && pages.length > 0 && (
+        <div className="document-step">
+          <div className="document-header">
+            <div>
+              <h2>Document</h2>
+              <p>{pages.length} {pages.length === 1 ? 'page' : 'pages'} ready</p>
+            </div>
+            <button className="btn-secondary document-add-btn" onClick={addAnotherImage}>
+              Add another image
+            </button>
+          </div>
           <div className="pages-grid">
             {pages.map((page, index) => (
               <div key={page.id} className="page-card">
-                <img src={URL.createObjectURL(page.image)} alt={`Page ${index + 1}`} />
+                <PageThumbnail image={page.image} alt={`Page ${index + 1}`} />
                 <div className="page-actions">
                   <span className="page-number">#{index + 1}</span>
                   {index > 0 && (
@@ -429,20 +537,34 @@ function ScannerPage() {
             ))}
           </div>
           <ExportPanel pages={pages} />
+          <div className="document-actions">
+            <button className="btn-secondary" onClick={startNewDocument}>Start new document</button>
+            <button className="btn-primary" onClick={addAnotherImage}>Add another image</button>
+          </div>
         </div>
       )}
     </div>
   )
 }
 
+function PageThumbnail({ image, alt }) {
+  const [url, setUrl] = useState(null)
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(image)
+    setUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [image])
+
+  return url ? <img src={url} alt={alt} /> : null
+}
+
 function FilterSlider({ label, min, max, step, defaultValue, onApply }) {
   const [value, setValue] = useState(defaultValue)
-  const [applied, setApplied] = useState(false)
 
-  const handleApply = () => {
-    onApply(value)
-    setApplied(true)
-    setTimeout(() => setApplied(false), 800)
+  const handleChange = (nextValue) => {
+    setValue(nextValue)
+    onApply(nextValue)
   }
 
   const handleReset = () => {
@@ -463,11 +585,8 @@ function FilterSlider({ label, min, max, step, defaultValue, onApply }) {
           max={max}
           step={step}
           value={value}
-          onChange={(e) => setValue(parseFloat(e.target.value))}
+          onChange={(e) => handleChange(parseFloat(e.target.value))}
         />
-        <button className={`apply-btn ${applied ? 'applied' : ''}`} onClick={handleApply}>
-          {applied ? '✓' : 'Apply'}
-        </button>
         {value !== defaultValue && (
           <button className="reset-btn" onClick={handleReset}>×</button>
         )}

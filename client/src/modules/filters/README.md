@@ -1,28 +1,34 @@
 # Filters Module
 
 ## Purpose
-Image filtering for brightness, contrast, color restoration, and enhancement.
 
-## Components
-- **ImageFilters.jsx**: Canvas-based pixel manipulation
+Applies visual cleanup and enhancement operations to the cropped scan image.
 
-## Available Filters
-- **brightness**: Adjust pixel RGB values
-- **contrast**: S-curve contrast adjustment
-- **grayscale**: Convert to grayscale
-- **sharpen**: Unsharp mask convolution
-- **colorRestore**: Auto white balance + saturation boost
-- **enhance**: Combined sharpen + auto-contrast + color restore
+## Runtime surface
 
-## Exports
-- `applyFilter(canvas, filterName, value)` → void
-- `applyEnhance(canvas)` → void
+- `ImageFilters.applyFilter(imageBlob, filterName, value = 1)`
+  Applies the selected filter and resolves a new JPEG blob.
 
-## Enhancement Pipeline
-1. Auto-white balance (gray world algorithm)
-2. Contrast enhancement (histogram equalization)
-3. Sharpening (unsharp mask)
-4. Noise reduction (simple blur on low-contrast areas)
+## Implemented filters
 
-## Dependencies
-- Canvas API (built-in)
+- `brightness`
+- `contrast`
+- `saturation`
+- `sharpen`
+- `denoise`
+- `grayscale`
+- `enhance`
+
+## Implemented behavior
+
+- Uses the Canvas API for all pixel operations.
+- Supports automatic enhancement through `autoContrast`, `sharpen`, and `autoWhiteBalance`.
+- Treats `sharpen` value `0` as a no-op.
+- Returns a new JPEG blob for each filter request.
+- Rejects invalid source images instead of hanging.
+
+## Scanner flow notes
+
+- The scanner page keeps an original cropped image and always applies new filters from that source image.
+- Manual sliders auto-apply as they move.
+- Rapid slider changes are guarded so older async filter results do not overwrite newer ones.

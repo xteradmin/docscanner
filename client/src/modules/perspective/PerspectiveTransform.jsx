@@ -1,6 +1,6 @@
 const PerspectiveTransform = {
   async warpPerspective(imageBlob, corners) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const img = new Image()
       img.onload = () => {
         const src = document.createElement('canvas')
@@ -35,7 +35,17 @@ const PerspectiveTransform = {
         )
 
         URL.revokeObjectURL(img.src)
-        dst.toBlob((blob) => resolve(blob), 'image/jpeg', 0.92)
+        dst.toBlob((blob) => {
+          if (blob) {
+            resolve(blob)
+          } else {
+            reject(new Error('Unable to create cropped image'))
+          }
+        }, 'image/jpeg', 0.92)
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src)
+        reject(new Error('Unable to load image for perspective correction'))
       }
       img.src = URL.createObjectURL(imageBlob)
     })

@@ -1,27 +1,16 @@
 # Auth Module (Server)
 
 ## Purpose
-JWT-based authentication with bcrypt password hashing.
 
-## Routes
-- `POST /api/auth/register` - Create account
-- `POST /api/auth/login` - Login, returns JWT
-- `GET /api/auth/me` - Get current user
+Reserved location for a future extracted server authentication module.
 
-## Middleware
-- `authMiddleware` - Verifies JWT in Authorization header
+## Current status
 
-## Database Schema
-```sql
-CREATE TABLE users (
-  id INTEGER PRIMARY KEY,
-  email TEXT UNIQUE,
-  password_hash TEXT,
-  created_at DATETIME
-);
-```
+- No server auth routes or middleware are implemented in this directory yet.
+- The current Express app does not mount `/api/auth/register`, `/api/auth/login`, or `/api/auth/me`.
+- Auth-related dependencies are present in `server/package.json`, but they are scaffolding for later work.
 
-## Dependencies
-- `bcryptjs` (password hashing)
-- `jsonwebtoken` (JWT tokens)
-- `better-sqlite3` (database)
+## Relationship to the client
+
+- `client/src/modules/auth/AuthProvider.jsx` already expects these routes.
+- Until server auth is implemented, that client auth context remains non-functional beyond local token storage behavior.

@@ -1,25 +1,23 @@
 # Perspective Module
 
 ## Purpose
-Corrects perspective distortion by warping detected document to a rectangle.
 
-## Components
-- **PerspectiveTransform.jsx**: Takes 4 corners + source image, outputs warped rectangle
+Flattens a four-corner document selection into a cropped rectangle.
 
-## Key Features
-- Computes perspective transform matrix
-- Applies affine warp to standard A4/letter rectangle
-- Output size: A4 proportions (210:297), scaled to 300 DPI
-- Default output: 2480 × 3508 pixels
+## Runtime surface
 
-## Exports
-- `warpPerspective(image, corners, outputSize)` → `Promise<Blob>`
+- `PerspectiveTransform.warpPerspective(imageBlob, corners)`
+  Returns a JPEG `Blob` produced from the selected four-corner region.
 
-## Algorithm
-1. Compute perspective transform matrix from 4 source corners
-2. Define target rectangle (A4 aspect ratio)
-3. Apply warp transformation
-4. Crop to output dimensions
+## Implemented behavior
 
-## Dependencies
-- Canvas API (built-in)
+- Converts normalized corner coordinates into source-image pixel coordinates.
+- Derives output width and height from the longest opposing document edges.
+- Computes a perspective transform matrix in pure JavaScript.
+- Samples pixels into the destination canvas with bilinear interpolation.
+- Returns the warped result as a JPEG blob.
+
+## Notes
+
+- The output size is based on the current document geometry, not a fixed A4 template.
+- The module rejects invalid or unreadable source images instead of silently failing.

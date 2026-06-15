@@ -1,6 +1,6 @@
 const DocumentDetector = {
   async detectDocument(imageBlob) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const img = new Image()
       img.onload = () => {
         const canvas = document.createElement('canvas')
@@ -14,6 +14,10 @@ const DocumentDetector = {
         
         URL.revokeObjectURL(img.src)
         resolve(corners)
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src)
+        reject(new Error('Unable to load image for detection'))
       }
       img.src = URL.createObjectURL(imageBlob)
     })
@@ -32,7 +36,7 @@ const DocumentDetector = {
     const largestRect = this.findLargestRectangle(contours, width, height)
     
     if (largestRect) {
-      return largestRect.map(p => ({
+      return this.orderCorners(largestRect).map(p => ({
         x: p.x / width,
         y: p.y / height
       }))
@@ -123,6 +127,18 @@ const DocumentDetector = {
       }
     }
     return bestRect
+  },
+
+  orderCorners(points) {
+    const bySum = [...points].sort((a, b) => (a.x + a.y) - (b.x + b.y))
+    const byDiff = [...points].sort((a, b) => (a.x - a.y) - (b.x - b.y))
+
+    return [
+      bySum[0],
+      byDiff[byDiff.length - 1],
+      bySum[bySum.length - 1],
+      byDiff[0]
+    ]
   },
 
   convexHull(points) {

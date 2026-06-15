@@ -1,5 +1,7 @@
 # Document Scanner Web App — Implementation Plan
 
+> Note: This file is the original implementation plan. The live code has changed since this plan was written. For the current module behavior and flow, use the root `README.md` and each module `README.md` under `client/src/modules` and `server/src/modules`.
+
 ## 1. Project Structure
 
 ```

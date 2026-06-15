@@ -1,29 +1,16 @@
 # Pages Module
 
 ## Purpose
-Multi-page document management with state persistence.
+
+Contains an earlier standalone page-manager component for multi-page documents.
 
 ## Components
-- **PageManager.jsx**: Manages multi-page document state
-- **PageList.jsx**: Thumbnail list of pages
 
-## Key Features
-- Add/remove/reorder pages
-- Auto-saves to IndexedDB every 30s
-- State includes: original image, processed image, corners, filters, order
+- `PageManager.jsx`
+  Renders a basic page list with remove and reorder buttons.
 
-## State Structure
-```javascript
-{
-  pages: [
-    { id, originalImage, processedImage, corners, filters, order }
-  ],
-  activePage: 0
-}
-```
+## Current status
 
-## Exports
-- `usePages()` hook returning `{pages, addPage, removePage, reorder}`
-
-## Dependencies
-- `idb` (IndexedDB wrapper)
+- The active scanner flow no longer uses `PageManager.jsx`.
+- Page state, page removal, page reordering, and the document step are currently handled directly inside `ScannerPage.jsx`.
+- This module remains in the repository as a legacy helper/reference implementation.
