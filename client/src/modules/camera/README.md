@@ -1,29 +1,28 @@
 # Camera Module
 
 ## Purpose
-Handles camera access and photo capture for document scanning.
+
+Provides the two current scan entry points: live camera capture and local image upload.
 
 ## Components
-- **CameraCapture.jsx**: Main camera component with responsive layout
-  - Mobile: Full-screen camera view with capture button
-  - Desktop: Camera preview in a card/modal
 
-## Key Features
-- Uses `react-webcam` for camera access
-- Automatically requests rear camera on mobile (`facingMode: 'environment'`)
-- Falls back to front camera if rear unavailable
-- Captures photos as JPEG blobs (quality 0.92)
+- `CameraCapture.jsx`
+  Captures a frame from the user's camera and returns it as a JPEG `Blob`.
 
-## Exports
-- `CameraCapture` component
-- `capturePhoto()` method
+- `ImageUpload.jsx`
+  Accepts an image from the file picker or drag and drop and forwards it into the same scan pipeline used by camera capture.
 
-## Dependencies
-- `react-webcam`
+## Implemented behavior
 
-## Usage
-```jsx
-import CameraCapture from './CameraCapture';
+- Uses `navigator.mediaDevices.getUserMedia()` directly.
+- Prefers the environment-facing camera on mobile devices.
+- Stops active media tracks on restart and unmount.
+- Shows a camera error state when access is denied or unavailable.
+- Accepts only `image/*` uploads.
+- Supports drag and drop plus manual file selection.
+- Calls the shared `onCapture(fileOrBlob)` callback for both sources.
 
-<CameraCapture onCapture={(blob) => handlePhoto(blob)} />
-```
+## Notes
+
+- The module does not perform any document detection itself.
+- Upload is the fallback path when camera access is unavailable.

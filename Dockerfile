@@ -1,3 +1,4 @@
+# Build the Vite client assets first.
 FROM node:20-alpine AS builder
 
 WORKDIR /app/client
@@ -6,6 +7,7 @@ RUN npm ci
 COPY client/ ./
 RUN npm run build
 
+# Install the server runtime dependencies and serve the built client with Express.
 FROM node:20-alpine
 WORKDIR /app
 

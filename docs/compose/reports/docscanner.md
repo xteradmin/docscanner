@@ -11,6 +11,8 @@ commits: initial
 
 # DocScanner — Final Report
 
+> Note: This report reflects an earlier delivery snapshot. The current application flow, active modules, and runtime responsibilities are documented in the root `README.md` and the module `README.md` files in `client/src/modules` and `server/src/modules`.
+
 ## What Was Built
 
 A document scanner web application that works on both laptop and Android mobile devices. Users capture photos of documents using their device camera, the app auto-detects document boundaries, corrects perspective distortion, enhances brightness and color, supports multi-page documents, and exports as PDF or image files.

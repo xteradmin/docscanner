@@ -1,17 +1,16 @@
 # Storage Module
 
 ## Purpose
-File storage abstraction layer.
 
-## Features
-- Default: Local filesystem at `/data/docscanner/uploads/<docId>/`
-- Auto-cleanup: Delete anonymous docs >24h old
+Documents the current storage behavior and the intended future extraction point for a real storage service.
 
-## Exports
-- `saveDocument(id, images, pdf)` → Promise<void>
-- `getDocument(id)` → Promise<{images, pdf}>
-- `deleteDocument(id)` → Promise<void>
+## Current implementation
 
-## Dependencies
-- `fs` (Node.js built-in)
-- `path` (Node.js built-in)
+- `POST /api/documents` resolves `UPLOAD_DIR` and ensures a directory exists for the new document id.
+- The current route returns metadata only.
+- Uploaded document pages and generated PDFs are not yet persisted through a dedicated storage module.
+
+## Current status
+
+- There is no extracted `save/get/delete` storage API in this directory yet.
+- Cleanup, persistence, and document retrieval are still future work.

@@ -1,27 +1,24 @@
 # Detection Module
 
 ## Purpose
-Auto-detects document boundaries in captured images.
 
-## Components
-- **DocumentDetector.jsx**: Receives image blob, returns 4 corner points
+Detects the four document corners from an input image before manual adjustment.
 
-## Key Features
-- Uses Canvas API for edge detection
-- Detects largest rectangular contour
-- Returns normalized coordinates (0-1 range)
-- Fallback: manual corner dragging if detection fails
+## Runtime surface
 
-## Exports
-- `detectDocument(imageBlob)` → `Promise<{corners: Point[]}>`
+- `DocumentDetector.detectDocument(imageBlob)`
+  Loads the image into a canvas, runs the edge-detection pipeline, and resolves an ordered four-corner result in normalized `0..1` coordinates.
 
-## Algorithm
-1. Convert to grayscale
-2. Apply Gaussian blur
-3. Canny edge detection
-4. Find contours
-5. Approximate polygon
-6. Return 4-point contour
+## Implemented behavior
 
-## Dependencies
-- Canvas API (built-in)
+- Converts the image to grayscale.
+- Runs a simple gradient-based edge pass.
+- Traces contours from the edge map.
+- Chooses the largest plausible rectangular contour.
+- Reorders the detected points into top-left, top-right, bottom-right, bottom-left order.
+- Falls back to a padded full-frame rectangle when no document contour is found.
+
+## Notes
+
+- This is a custom Canvas-based implementation. It does not use OpenCV or an external vision library.
+- The scanner UI still allows manual corner dragging after detection.

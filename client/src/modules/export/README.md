@@ -1,25 +1,22 @@
 # Export Module
 
 ## Purpose
-Export processed documents as PDF or image files.
+
+Exports the assembled document pages from the dedicated document step.
 
 ## Components
-- **ExportPanel.jsx**: UI for choosing PDF/image export
-- **ExportService.js**: Export logic
 
-## Export Options
+- `ExportPanel.jsx`
+  UI for selecting export format and downloading the current document.
 
-### Client-Side (Offline)
-- **Image**: Direct download as JPEG/PNG via Blob API
-- **PDF**: Uses jsPDF for simple PDF generation
+## Implemented behavior
 
-### Server-Side (Online)
-- **PDF**: POST to `/api/pdf/generate` for high-quality PDF
+- Uses `jsPDF` in the browser for PDF export.
+- Uses an off-screen canvas to export each page as JPG or PNG.
+- Loads each stored page blob into an `Image` before export.
+- Centers PDF pages inside an A4 canvas while preserving aspect ratio.
 
-## Exports
-- `exportAsPDF(pages)` → Promise<Blob>
-- `exportAsImage(blob, filename, format)` → void
+## Current status
 
-## Dependencies
-- `jspdf` (client-side PDF)
-- Canvas API (image export)
+- The current client UI exports entirely in-browser.
+- The server endpoint `/api/pdf/generate` exists, but `ExportPanel.jsx` does not call it yet.
