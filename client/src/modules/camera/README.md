@@ -19,7 +19,9 @@ Provides the two current scan entry points: live camera capture and local image 
 - Stops active media tracks on restart and unmount.
 - Shows a camera error state when access is denied or unavailable.
 - Accepts only `image/*` uploads.
+- Rejects uploaded images larger than 25 MB before they enter the scan pipeline.
 - Supports drag and drop plus manual file selection.
+- Ignores drag and drop while a scan is already processing.
 - Calls the shared `onCapture(fileOrBlob)` callback for both sources.
 
 ## Notes

@@ -7,6 +7,12 @@ import ImageFilters from '../modules/filters/ImageFilters'
 import ExportPanel from '../modules/export/ExportPanel'
 
 const MAGNIFIER_ZOOM = 3
+const WORKFLOW_STEPS = [
+  { id: 'capture', label: 'Capture' },
+  { id: 'crop', label: 'Crop' },
+  { id: 'filter', label: 'Enhance' },
+  { id: 'document', label: 'Export' }
+]
 
 function ScannerPage() {
   const [step, setStep] = useState('capture')
@@ -23,16 +29,27 @@ function ScannerPage() {
   const [showMagnifier, setShowMagnifier] = useState(false)
   const [filterView, setFilterView] = useState('full')
   const [filterControlsTab, setFilterControlsTab] = useState('presets')
+  const [scanNotice, setScanNotice] = useState(null)
   const imageRef = useRef(null)
   const containerRef = useRef(null)
   const filterRequestId = useRef(0)
+  const activeStepIndex = Math.max(0, WORKFLOW_STEPS.findIndex(item => item.id === step))
+  const pageLabel = `${pages.length} ${pages.length === 1 ? 'page' : 'pages'}`
 
   const handleCapture = async (blob) => {
-    if (!blob) return
+    if (!blob) {
+      setScanNotice({
+        type: 'error',
+        title: 'No image received',
+        message: 'Try capturing the page again or upload a document photo.'
+      })
+      return
+    }
 
     if (capturedImageUrl) URL.revokeObjectURL(capturedImageUrl)
     if (processedImageUrl) URL.revokeObjectURL(processedImageUrl)
 
+    setScanNotice(null)
     setCapturedImage(blob)
     const url = URL.createObjectURL(blob)
     setCapturedImageUrl(url)
@@ -50,9 +67,15 @@ function ScannerPage() {
         { x: 0.9, y: 0.9 },
         { x: 0.1, y: 0.9 }
       ])
+      setScanNotice({
+        type: 'warning',
+        title: 'Edges need manual review',
+        message: 'We could not detect the document edges automatically. Adjust the corners before continuing.'
+      })
+    } finally {
+      setStep('crop')
+      setIsProcessing(false)
     }
-    setStep('crop')
-    setIsProcessing(false)
   }
 
   const getRelativePosition = useCallback((clientX, clientY) => {
@@ -130,6 +153,7 @@ function ScannerPage() {
   const processCrop = async () => {
     if (!capturedImage || !corners) return
     setIsProcessing(true)
+    setScanNotice(null)
     try {
       const warped = await PerspectiveTransform.warpPerspective(capturedImage, corners)
       setFilterSourceImage(warped)
@@ -139,9 +163,15 @@ function ScannerPage() {
       setFilterControlsTab('presets')
       setStep('filter')
     } catch (err) {
-      console.error('Processing failed:', err)
+      console.error('Crop failed:', err)
+      setScanNotice({
+        type: 'error',
+        title: 'Could not crop this page',
+        message: 'Move the corners fully inside the image and try again. If the photo is very large, use a smaller image.'
+      })
+    } finally {
+      setIsProcessing(false)
     }
-    setIsProcessing(false)
   }
 
   const applyFilter = async (filterName, value) => {
@@ -149,6 +179,7 @@ function ScannerPage() {
     const requestId = filterRequestId.current + 1
     filterRequestId.current = requestId
     setIsProcessing(true)
+    setScanNotice(null)
     try {
       const result = await ImageFilters.applyFilter(filterSourceImage, filterName, value)
       if (requestId !== filterRequestId.current) {
@@ -160,6 +191,13 @@ function ScannerPage() {
       setProcessedImageUrl(url)
     } catch (err) {
       console.error('Filter failed:', err)
+      if (requestId === filterRequestId.current) {
+        setScanNotice({
+          type: 'error',
+          title: 'Enhancement failed',
+          message: 'The original crop is still available. Try a different preset or add the page without extra filters.'
+        })
+      }
     } finally {
       if (requestId === filterRequestId.current) {
         setIsProcessing(false)
@@ -170,6 +208,7 @@ function ScannerPage() {
   const resetFilters = () => {
     if (!filterSourceImage) return
     filterRequestId.current += 1
+    setScanNotice(null)
     if (processedImageUrl) URL.revokeObjectURL(processedImageUrl)
     setProcessedImage(filterSourceImage)
     setProcessedImageUrl(URL.createObjectURL(filterSourceImage))
@@ -177,6 +216,7 @@ function ScannerPage() {
 
   const goBackToCrop = () => {
     filterRequestId.current += 1
+    setScanNotice(null)
     if (processedImageUrl) URL.revokeObjectURL(processedImageUrl)
     setFilterSourceImage(null)
     setProcessedImage(null)
@@ -186,6 +226,7 @@ function ScannerPage() {
 
   const clearCurrentScan = () => {
     filterRequestId.current += 1
+    setScanNotice(null)
     if (capturedImageUrl) URL.revokeObjectURL(capturedImageUrl)
     if (processedImageUrl) URL.revokeObjectURL(processedImageUrl)
     setCapturedImage(null)
@@ -271,24 +312,50 @@ function ScannerPage() {
 
   return (
     <div className="scanner-app">
-      <div className="top-bar">
-        <span className="app-title">DocScanner</span>
-      </div>
+      <header className="top-bar">
+        <div className="brand-block">
+          <span className="app-kicker">Document scanner</span>
+          <h1 className="app-title">DocScanner</h1>
+        </div>
+        <div className="document-chip" aria-live="polite">
+          <span>Current document</span>
+          <strong>{pageLabel}</strong>
+        </div>
+      </header>
+
+      <nav className="workflow-steps" aria-label="Scan progress">
+        {WORKFLOW_STEPS.map((item, index) => (
+          <div
+            key={item.id}
+            className={`workflow-step ${index === activeStepIndex ? 'active' : ''} ${index < activeStepIndex ? 'complete' : ''}`}
+          >
+            <span className="workflow-index">{index + 1}</span>
+            <span>{item.label}</span>
+          </div>
+        ))}
+      </nav>
+
+      {scanNotice && (
+        <ScanNotice notice={scanNotice} onDismiss={() => setScanNotice(null)} />
+      )}
 
       {step === 'capture' && (
         <div className="capture-step">
+          <div className="capture-intro">
+            <div>
+              <h2>Start a scan</h2>
+              <p>Use the camera or choose an image from your device.</p>
+            </div>
+            {pages.length > 0 && (
+              <button className="btn-secondary compact" type="button" onClick={() => setStep('document')}>
+                Review {pageLabel}
+              </button>
+            )}
+          </div>
           <div className="capture-grid">
             <CameraCapture onCapture={handleCapture} />
             <ImageUpload onCapture={handleCapture} disabled={isProcessing} />
           </div>
-          {pages.length > 0 && (
-            <div className="draft-return">
-              <span>{pages.length} {pages.length === 1 ? 'page' : 'pages'} in current document</span>
-              <button className="btn-secondary" onClick={() => setStep('document')}>
-                Back to document
-              </button>
-            </div>
-          )}
           {isProcessing && (
             <div className="processing-overlay">
               <div className="spinner"></div>
@@ -302,7 +369,7 @@ function ScannerPage() {
         <div className="crop-step" ref={containerRef}>
           <div className="step-header">
             <h2>Adjust Edges</h2>
-            <p>Drag corners to match document</p>
+            <p>Place each corner on the page boundary.</p>
           </div>
 
           <div className="crop-editor">
@@ -357,8 +424,8 @@ function ScannerPage() {
           )}
 
           <div className="action-buttons">
-            <button className="btn-secondary" onClick={resetAll}>Retake</button>
-            <button className="btn-primary" onClick={processCrop} disabled={isProcessing}>
+            <button className="btn-secondary" type="button" onClick={resetAll}>Retake</button>
+            <button className="btn-primary" type="button" onClick={processCrop} disabled={isProcessing}>
               {isProcessing ? 'Processing...' : 'Crop & Continue'}
             </button>
           </div>
@@ -368,19 +435,21 @@ function ScannerPage() {
       {step === 'filter' && processedImageUrl && (
         <div className="filter-step">
           <div className="step-header">
-            <h2>Enhance</h2>
-            <p>Choose preset or adjust</p>
+            <h2>Enhance Page</h2>
+            <p>Review the crop and choose a clean finish.</p>
           </div>
 
           <div className="filter-view-toggle">
             <button 
               className={`view-btn ${filterView === 'full' ? 'active' : ''}`}
+              type="button"
               onClick={() => setFilterView('full')}
             >
               Full
             </button>
             <button 
               className={`view-btn ${filterView === 'split' ? 'active' : ''}`}
+              type="button"
               onClick={() => setFilterView('split')}
             >
               Compare
@@ -502,8 +571,8 @@ function ScannerPage() {
           </div>
 
           <div className="action-buttons">
-            <button className="btn-secondary" onClick={goBackToCrop}>Back</button>
-            <button className="btn-primary" onClick={addToDocument}>Add page to document</button>
+            <button className="btn-secondary" type="button" onClick={goBackToCrop}>Back</button>
+            <button className="btn-primary" type="button" onClick={addToDocument}>Add page to document</button>
           </div>
         </div>
       )}
@@ -512,10 +581,11 @@ function ScannerPage() {
         <div className="document-step">
           <div className="document-header">
             <div>
-              <h2>Document</h2>
-              <p>{pages.length} {pages.length === 1 ? 'page' : 'pages'} ready</p>
+              <span className="section-eyebrow">Ready to export</span>
+              <h2>Review Document</h2>
+              <p>{pageLabel} ready</p>
             </div>
-            <button className="btn-secondary document-add-btn" onClick={addAnotherImage}>
+            <button className="btn-secondary document-add-btn" type="button" onClick={addAnotherImage}>
               Add another image
             </button>
           </div>
@@ -526,20 +596,20 @@ function ScannerPage() {
                 <div className="page-actions">
                   <span className="page-number">#{index + 1}</span>
                   {index > 0 && (
-                    <button className="page-btn" onClick={() => movePage(index, index - 1)}>↑</button>
+                    <button className="page-btn" type="button" aria-label={`Move page ${index + 1} up`} onClick={() => movePage(index, index - 1)}>↑</button>
                   )}
                   {index < pages.length - 1 && (
-                    <button className="page-btn" onClick={() => movePage(index, index + 1)}>↓</button>
+                    <button className="page-btn" type="button" aria-label={`Move page ${index + 1} down`} onClick={() => movePage(index, index + 1)}>↓</button>
                   )}
-                  <button className="page-btn delete" onClick={() => removePage(page.id)}>×</button>
+                  <button className="page-btn delete" type="button" aria-label={`Remove page ${index + 1}`} onClick={() => removePage(page.id)}>×</button>
                 </div>
               </div>
             ))}
           </div>
           <ExportPanel pages={pages} />
           <div className="document-actions">
-            <button className="btn-secondary" onClick={startNewDocument}>Start new document</button>
-            <button className="btn-primary" onClick={addAnotherImage}>Add another image</button>
+            <button className="btn-secondary" type="button" onClick={startNewDocument}>Start new document</button>
+            <button className="btn-primary" type="button" onClick={addAnotherImage}>Add another image</button>
           </div>
         </div>
       )}
@@ -557,6 +627,18 @@ function PageThumbnail({ image, alt }) {
   }, [image])
 
   return url ? <img src={url} alt={alt} /> : null
+}
+
+function ScanNotice({ notice, onDismiss }) {
+  return (
+    <div className={`scan-notice ${notice.type}`} role="status" aria-live="polite">
+      <div>
+        <strong>{notice.title}</strong>
+        <p>{notice.message}</p>
+      </div>
+      <button type="button" onClick={onDismiss} aria-label="Dismiss notice">×</button>
+    </div>
+  )
 }
 
 function FilterSlider({ label, min, max, step, defaultValue, onApply }) {
