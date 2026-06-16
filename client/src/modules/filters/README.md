@@ -32,3 +32,4 @@ Applies visual cleanup and enhancement operations to the cropped scan image.
 - The scanner page keeps an original cropped image and always applies new filters from that source image.
 - Manual sliders auto-apply as they move.
 - Rapid slider changes are guarded so older async filter results do not overwrite newer ones.
+- Filter failures are shown in the scanner UI while preserving the original cropped image, so the user can retry or add the page without extra enhancement.

@@ -22,3 +22,4 @@ Detects the four document corners from an input image before manual adjustment.
 
 - This is a custom Canvas-based implementation. It does not use OpenCV or an external vision library.
 - The scanner UI still allows manual corner dragging after detection.
+- If automatic detection fails, the scanner shows a warning and starts from the fallback rectangle so the user can recover manually instead of losing the scan.

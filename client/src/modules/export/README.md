@@ -15,6 +15,10 @@ Exports the assembled document pages from the dedicated document step.
 - Uses an off-screen canvas to export each page as JPG or PNG.
 - Loads each stored page blob into an `Image` before export.
 - Centers PDF pages inside an A4 canvas while preserving aspect ratio.
+- Presents export formats as selectable cards with format descriptions and selected-output summary.
+- Disables format switching while an export is running.
+- Shows a user-facing export error if PDF or image export fails.
+- Keeps the exporting state active until generated image blobs have been created and download links are triggered.
 
 ## Current status
 

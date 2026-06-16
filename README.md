@@ -1,6 +1,6 @@
 # DocScanner
 
-DocScanner is a browser-based document scanner built with React and Express. It supports camera capture or image upload, document edge detection, manual corner adjustment with magnifier zoom, perspective correction, filter controls, multi-page document assembly, and export as PDF, JPG, or PNG.
+DocScanner is a browser-based document scanner built with React and Express. It supports camera capture or image upload, document edge detection, manual corner adjustment with magnifier zoom, perspective correction, filter controls, multi-page document assembly, and export as PDF, JPG, or PNG from a production-oriented scanner interface.
 
 ## Current Flow
 
@@ -18,8 +18,10 @@ DocScanner is a browser-based document scanner built with React and Express. It 
 - Perspective warp from a four-corner selection into a flattened rectangle.
 - Filter presets plus manual brightness, contrast, saturation, and sharpen sliders.
 - Filter application from the original cropped image, not from previously filtered output.
+- Production scanner shell with document status, workflow progress, responsive capture/edit/review layouts, and accessible page controls.
 - Dedicated document step for page review, reordering, removal, and export.
-- Client-side export to PDF, JPG, or PNG.
+- Client-side export to PDF, JPG, or PNG with format cards, selected-format summary, disabled export states, and visible export errors.
+- User-facing recovery messages for failed edge detection, crop processing, image filtering, invalid uploads, and export failures.
 - Server endpoints for health checks, PDF generation, and stub document metadata creation.
 
 ## Development
@@ -82,6 +84,7 @@ The Docker image builds the Vite client, installs the Express server runtime dep
 
 - The client export UI currently uses `jsPDF` and Canvas in-browser.
 - The server PDF endpoint exists and accepts JPEG or PNG uploads, but the current export UI does not call it yet.
+- In-progress documents are kept in React state for the current browser session only; there is no IndexedDB draft persistence or account-backed document history yet.
 - `AuthProvider.jsx` expects `/api/auth/*` endpoints, but those routes are not mounted in the current server.
 - `better-sqlite3`, `bcryptjs`, and `jsonwebtoken` are installed as scaffolding for later persistence/auth work.
 

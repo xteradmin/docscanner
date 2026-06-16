@@ -65,15 +65,16 @@ function CameraCapture({ onCapture }) {
   if (error) {
     return (
       <div className="camera-error">
-        <div className="error-icon">📷</div>
+        <div className="error-icon">CAM</div>
         <p>{error}</p>
-        <button onClick={startCamera}>Try Again</button>
+        <button className="btn-secondary compact" type="button" onClick={startCamera}>Try again</button>
       </div>
     )
   }
 
   return (
     <div className="camera-container">
+      <div className="camera-label">Camera</div>
       <video
         ref={videoRef}
         autoPlay
@@ -82,7 +83,7 @@ function CameraCapture({ onCapture }) {
         className="camera-video"
       />
       <canvas ref={canvasRef} style={{ display: 'none' }} />
-      <button className="capture-btn" onClick={capture}>
+      <button className="capture-btn" type="button" aria-label="Capture photo" onClick={capture}>
         <div className="capture-btn-inner"></div>
       </button>
     </div>
