@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "npm *"
+      "Bash(git *)",
+      "Bash(gh *)",
+      "Bash(npm *)",
+      "Bash(pnpm *)",
+      "Bash(node *)",
+      "Bash(python *)"
     ]
   }
 }
