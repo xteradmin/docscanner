@@ -7,7 +7,7 @@ Provides the PDF Tools UI for combining, splitting, and compressing existing PDF
 ## Components
 
 - `CombineTool.jsx`
-  Upload 2+ PDF files, reorder with up/down buttons, merge into a single PDF download.
+  Upload 1+ PDF files, extract individual pages into a visual grid, rearrange them via high-performance native drag-and-drop or position dropdowns, and merge into a single PDF download.
 
 - `SplitTool.jsx`
   Upload a single PDF, choose a split mode (custom ranges, every page, or extract specific pages), download result as ZIP or single PDF.
@@ -19,7 +19,7 @@ Provides the PDF Tools UI for combining, splitting, and compressing existing PDF
 
 - Each tool uses `fetch()` to POST multipart form data to the corresponding server endpoint.
 - File inputs accept `application/pdf` only.
-- Combine tool supports adding multiple files incrementally and reordering before merge.
+- Combine tool parses PDFs locally (using `pdfjs-dist`) to generate visual page thumbnails asynchronously. It supports adding multiple files incrementally and allows reordering at the specific page-level via native drag-and-drop or dropdowns.
 - Split tool supports three modes: custom ranges (`1-3,5,7-9`), every page (each page → separate file), and extract specific pages.
 - Compress tool reads `X-Original-Size`, `X-Compressed-Size`, and `X-Reduction-Percent` response headers to display stats.
 - All tools show loading state during processing and user-facing error messages on failure.

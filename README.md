@@ -12,7 +12,7 @@ DocScanner is a browser-based document scanner built with React and Express. It 
 5. Export the document or add another image to combine into the same PDF.
 
 ### PDF Tools (`/tools`)
-1. **Combine**: Upload 2+ PDF files, reorder them, and merge into a single PDF.
+1. **Combine**: Upload 1+ PDF files, visually arrange and reorder specific pages via a high-performance drag-and-drop grid, and merge into a single PDF.
 2. **Split**: Upload a PDF, choose page ranges or split every page, download as ZIP or single PDF.
 3. **Compress**: Upload a PDF, optimize its internal structure, download a smaller file with size reduction stats.
 
@@ -30,7 +30,7 @@ DocScanner is a browser-based document scanner built with React and Express. It 
 - User-facing recovery messages for failed edge detection, crop processing, image filtering, invalid uploads, and export failures.
 - Server endpoints for health checks, PDF generation, and stub document metadata creation.
 - **PDF Tools page** with navigation bar, tool selection cards, and three server-side utilities:
-  - **Combine PDFs** (`POST /api/pdf/merge`): merges 2+ PDFs using `pdf-lib` `copyPages()`.
+  - **Combine PDFs** (`POST /api/pdf/merge`): Parses PDFs client-side for visual thumbnail generation, allows specific page-level reordering via native drag-and-drop, and merges via `pdf-lib`.
   - **Split PDF** (`POST /api/pdf/split`): extracts page ranges or splits every page into a ZIP via `archiver`.
   - **Compress PDF** (`POST /api/pdf/compress`): repacks with optimized object streams, returns size reduction stats.
 

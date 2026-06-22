@@ -59,17 +59,46 @@ router.get('/documents', (req, res) => {
 // ─── PDF Merge (Combine) ───────────────────────────────────────────────────────
 router.post('/pdf/merge', upload.array('files', 20), async (req, res) => {
   try {
-    if (!req.files || req.files.length < 2) {
-      return res.status(400).json({ error: 'Please upload at least 2 PDF files to merge.' })
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'Please upload at least 1 PDF file to merge.' })
     }
 
     const mergedPdf = await PDFDocument.create()
-
+    const loadedDocs = []
+    
     for (const file of req.files) {
-      const srcDoc = await PDFDocument.load(file.buffer, { ignoreEncryption: true })
-      const pageIndices = srcDoc.getPageIndices()
-      const copiedPages = await mergedPdf.copyPages(srcDoc, pageIndices)
-      copiedPages.forEach(page => mergedPdf.addPage(page))
+      loadedDocs.push(await PDFDocument.load(file.buffer, { ignoreEncryption: true }))
+    }
+
+    if (req.body.pageOrder) {
+      const pageOrder = JSON.parse(req.body.pageOrder)
+      
+      const copiedPagesMap = new Map()
+      for (let i = 0; i < loadedDocs.length; i++) {
+        const indices = new Set()
+        pageOrder.forEach(p => { if (p.fileIndex === i) indices.add(p.pageIndex) })
+        if (indices.size > 0) {
+          const uniqueIndices = Array.from(indices).sort((a, b) => a - b)
+          const copied = await mergedPdf.copyPages(loadedDocs[i], uniqueIndices)
+          const pageMap = new Map()
+          uniqueIndices.forEach((idx, copyIdx) => pageMap.set(idx, copied[copyIdx]))
+          copiedPagesMap.set(i, pageMap)
+        }
+      }
+
+      for (const p of pageOrder) {
+        if (copiedPagesMap.has(p.fileIndex) && copiedPagesMap.get(p.fileIndex).has(p.pageIndex)) {
+          const page = copiedPagesMap.get(p.fileIndex).get(p.pageIndex)
+          mergedPdf.addPage(page)
+        }
+      }
+    } else {
+      // Legacy support
+      for (const srcDoc of loadedDocs) {
+        const pageIndices = srcDoc.getPageIndices()
+        const copiedPages = await mergedPdf.copyPages(srcDoc, pageIndices)
+        copiedPages.forEach(page => mergedPdf.addPage(page))
+      }
     }
 
     const pdfBytes = await mergedPdf.save()
