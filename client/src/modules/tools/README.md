@@ -1,0 +1,40 @@
+# Tools Module
+
+## Purpose
+
+Provides the PDF Tools UI for combining, splitting, and compressing existing PDF files. All processing happens server-side; the client handles file selection, configuration, and download.
+
+## Components
+
+- `CombineTool.jsx`
+  Upload 1+ PDF files, extract individual pages into a visual grid, rearrange them via high-performance native drag-and-drop or position dropdowns, and merge into a single PDF download.
+
+- `SplitTool.jsx`
+  Upload a single PDF, choose a split mode (custom ranges, every page, or extract specific pages), download result as ZIP or single PDF.
+
+- `CompressTool.jsx`
+  Upload a single PDF, compress via structural optimization, display original vs compressed size and percentage reduction.
+
+## Implemented behavior
+
+- Combine and Split tools use `fetch()` to POST multipart form data.
+- Compress tool uses `XMLHttpRequest` to provide real-time byte-level upload progress tracking and a simulated multi-phase processing animation for large files.
+- File inputs accept `application/pdf` only.
+- Combine tool parses PDFs locally (using `pdfjs-dist`) to generate visual page thumbnails asynchronously. It supports adding multiple files incrementally and allows reordering at the specific page-level via native drag-and-drop or dropdowns.
+- Split tool supports three modes: custom ranges (`1-3,5,7-9`), every page (each page → separate file), and extract specific pages.
+- Compress tool reads `X-Original-Size`, `X-Compressed-Size`, and `X-Reduction-Percent` response headers to display stats.
+- All tools show loading state during processing and user-facing error messages on failure.
+- Download is triggered via a temporary `<a>` element with `download` attribute and `blob:` URL.
+
+## Server endpoints used
+
+| Tool | Endpoint | Response |
+|------|----------|----------|
+| Combine | `POST /api/pdf/merge` | Merged PDF |
+| Split | `POST /api/pdf/split` | PDF or ZIP |
+| Compress | `POST /api/pdf/compress` | Compressed PDF + headers |
+
+## Current status
+
+- All three tools are fully functional.
+- Compression is structural only (object stream optimization); image recompression is not yet implemented.

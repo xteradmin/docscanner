@@ -2,7 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './modules/auth/AuthProvider'
 import Layout from './components/Layout'
 import ScannerPage from './pages/ScannerPage'
-import DocumentsPage from './pages/DocumentsPage'
+import ToolsPage from './pages/ToolsPage'
 
 function App() {
   return (
@@ -11,7 +11,7 @@ function App() {
         <Layout>
           <Routes>
             <Route path="/" element={<ScannerPage />} />
-            <Route path="/documents" element={<DocumentsPage />} />
+            <Route path="/tools" element={<ToolsPage />} />
           </Routes>
         </Layout>
       </Router>

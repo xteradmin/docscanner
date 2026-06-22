@@ -15,7 +15,7 @@ commits: initial
 
 ## What Was Built
 
-A document scanner web application that works on both laptop and Android mobile devices. Users capture photos of documents using their device camera, the app auto-detects document boundaries, corrects perspective distortion, enhances brightness and color, supports multi-page documents, and exports as PDF or image files.
+A document scanner web application that works on both laptop and Android mobile devices. Users capture photos of documents using their device camera, the app auto-detects document boundaries, corrects perspective distortion, enhances brightness and color, supports multi-page documents, and exports as PDF or image files. A dedicated PDF Tools page (`/tools`) provides server-side combine, split, and compress utilities for existing PDF files.
 
 The application is deployed at `tool.cobaweb.com` via Coolify with Traefik reverse proxy for HTTPS/SSL.
 
@@ -32,12 +32,13 @@ docscanner/
 │   │   ├── filters/                 # ImageFilters (brightness, contrast, sharpen)
 │   │   ├── pages/                   # PageManager (multi-page state)
 │   │   ├── export/                  # ExportPanel (PDF/image download)
+│   │   ├── tools/                   # PDF Tools (CombineTool, SplitTool, CompressTool)
 │   │   └── auth/                    # AuthProvider (optional JWT auth)
-│   ├── src/components/              # Layout, shared UI
-│   └── src/pages/                   # ScannerPage, DocumentsPage
+│   ├── src/components/              # Layout (nav bar), shared UI
+│   └── src/pages/                   # ScannerPage (/), ToolsPage (/tools)
 ├── server/                          # Node.js backend (Express)
 │   └── src/modules/
-│       ├── api/                     # API routes (PDF generation, documents)
+│       ├── api/                     # API routes (PDF generate/merge/split/compress, documents)
 │       ├── auth/                    # JWT authentication
 │       ├── pdf/                     # PDF generation (pdf-lib)
 │       └── storage/                 # File storage abstraction
@@ -58,7 +59,10 @@ docscanner/
 
 **Server-Side:**
 - **PDF Generation**: `pdf-lib` for high-quality multi-page PDFs
-- **API Routes**: `/api/pdf/generate`, `/api/documents`, `/api/health`
+- **PDF Merge**: `pdf-lib` `copyPages()` to combine 2+ PDFs into one
+- **PDF Split**: page range parsing + `archiver` ZIP packaging
+- **PDF Compress**: two-pass structural optimization via `pdf-lib` object streams
+- **API Routes**: `/api/pdf/generate`, `/api/pdf/merge`, `/api/pdf/split`, `/api/pdf/compress`, `/api/documents`, `/api/health`
 - **Storage**: Local filesystem at `/data/docscanner/uploads/`
 
 ### Design Decisions
@@ -84,6 +88,9 @@ docker compose up --build
 
 ### API Endpoints
 - `POST /api/pdf/generate` - Generate PDF from uploaded images
+- `POST /api/pdf/merge` - Merge 2+ PDF files into one
+- `POST /api/pdf/split` - Split PDF by page ranges (ZIP or single PDF)
+- `POST /api/pdf/compress` - Compress PDF with size reduction stats
 - `POST /api/documents` - Save document metadata
 - `GET /api/documents` - List documents
 - `GET /api/health` - Health check
