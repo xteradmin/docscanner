@@ -34,6 +34,16 @@ DocScanner is a browser-based document scanner built with React and Express. It 
   - **Split PDF** (`POST /api/pdf/split`): extracts page ranges or splits every page into a ZIP via `archiver`.
   - **Compress PDF** (`POST /api/pdf/compress`): repacks with optimized object streams, returns size reduction stats, and features XHR upload progress with simulated processing animations for large files.
 
+
+## Performance & Optimizations
+
+- **High-Performance Drag-and-Drop**: The Combine tool leverages native HTML5 DOM drag-and-drop (bypassing heavy React animation libraries) to support reordering massive page grids with zero UI lag.
+- **Asynchronous Thumbnail Generation**: PDFs are parsed client-side using `pdfjs-dist` to generate visual thumbnails asynchronously, preventing browser freezing on large documents.
+- **Large File Support (500MB)**: The server safely accepts payloads up to 500MB across all tools via `multer` memory storage.
+- **Memory-Safe Compression**: The compression engine chunks CPU operations (`objectsPerTick: 100`) to prevent Node.js Out-of-Memory (OOM) crashes on 100MB+ PDFs.
+- **Zero-Footprint Split Streaming**: The Split tool uses Node.js Streams to pipe split PDF pages instantly into the `archiver` ZIP stream (`archive.pipe(res)`), resulting in near-zero server memory overhead.
+- **UX Progress Tracking**: The Compress tool utilizes `XMLHttpRequest` to provide real-time, byte-level upload progress tracking alongside simulated multi-phase processing animations for long-running server tasks.
+
 ## Development
 
 Install dependencies:
