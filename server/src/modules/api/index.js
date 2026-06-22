@@ -5,9 +5,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { writeFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
-import { createRequire } from 'module'
-const require = createRequire(import.meta.url)
-const archiver = require('archiver')
+import { ZipArchive } from 'archiver'
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } })
@@ -148,7 +146,7 @@ router.post('/pdf/split', upload.single('file'), async (req, res) => {
     res.setHeader('Content-Type', 'application/zip')
     res.setHeader('Content-Disposition', `attachment; filename="split_pages_${Date.now()}.zip"`)
 
-    const archive = archiver('zip', { zlib: { level: 6 } })
+    const archive = new ZipArchive({ zlib: { level: 6 } })
     archive.pipe(res)
 
     for (let i = 0; i < pageGroups.length; i++) {
