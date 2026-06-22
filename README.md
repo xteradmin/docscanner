@@ -32,7 +32,7 @@ DocScanner is a browser-based document scanner built with React and Express. It 
 - **PDF Tools page** with navigation bar, tool selection cards, and three server-side utilities:
   - **Combine PDFs** (`POST /api/pdf/merge`): Parses PDFs client-side for visual thumbnail generation, allows specific page-level reordering via native drag-and-drop, and merges via `pdf-lib`.
   - **Split PDF** (`POST /api/pdf/split`): extracts page ranges or splits every page into a ZIP via `archiver`.
-  - **Compress PDF** (`POST /api/pdf/compress`): repacks with optimized object streams, returns size reduction stats.
+  - **Compress PDF** (`POST /api/pdf/compress`): repacks with optimized object streams, returns size reduction stats, and features XHR upload progress with simulated processing animations for large files.
 
 ## Development
 

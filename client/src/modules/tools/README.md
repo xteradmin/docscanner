@@ -17,7 +17,8 @@ Provides the PDF Tools UI for combining, splitting, and compressing existing PDF
 
 ## Implemented behavior
 
-- Each tool uses `fetch()` to POST multipart form data to the corresponding server endpoint.
+- Combine and Split tools use `fetch()` to POST multipart form data.
+- Compress tool uses `XMLHttpRequest` to provide real-time byte-level upload progress tracking and a simulated multi-phase processing animation for large files.
 - File inputs accept `application/pdf` only.
 - Combine tool parses PDFs locally (using `pdfjs-dist`) to generate visual page thumbnails asynchronously. It supports adding multiple files incrementally and allows reordering at the specific page-level via native drag-and-drop or dropdowns.
 - Split tool supports three modes: custom ranges (`1-3,5,7-9`), every page (each page → separate file), and extract specific pages.

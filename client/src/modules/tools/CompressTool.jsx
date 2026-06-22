@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
 function CompressTool() {
   const [file, setFile] = useState(null)
@@ -26,46 +26,107 @@ function CompressTool() {
     setResult(null)
   }
 
-  const handleCompress = async () => {
+  const [progress, setProgress] = useState(0)
+  const [phase, setPhase] = useState('') // '', 'uploading', 'processing'
+  const [processingProgress, setProcessingProgress] = useState(0)
+  const [processingStatus, setProcessingStatus] = useState('Analyzing structure...')
+
+  // Simulate progress for the backend PDF-lib processing
+  useEffect(() => {
+    if (phase !== 'processing') {
+      setProcessingProgress(0)
+      return
+    }
+    
+    let current = 0
+    const interval = setInterval(() => {
+      current += Math.random() * 3
+      if (current > 95) current = 95 // Hang at 95% until actually done
+      
+      setProcessingProgress(Math.floor(current))
+      
+      if (current < 30) setProcessingStatus('Analyzing PDF structure...')
+      else if (current < 60) setProcessingStatus('Removing redundant objects...')
+      else if (current < 85) setProcessingStatus('Optimizing data streams...')
+      else setProcessingStatus('Finalizing document...')
+      
+    }, 500)
+
+    return () => clearInterval(interval)
+  }, [phase])
+
+  const handleCompress = () => {
     if (!file) {
       setError('Please upload a PDF file.')
       return
     }
 
     setProcessing(true)
+    setPhase('uploading')
+    setProgress(0)
     setError('')
     setResult(null)
 
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
+    const formData = new FormData()
+    formData.append('file', file)
 
-      const response = await fetch('/api/pdf/compress', { method: 'POST', body: formData })
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        throw new Error(data.error || 'Compression failed')
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/api/pdf/compress')
+    xhr.responseType = 'blob'
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100)
+        setProgress(percent)
+        if (percent >= 100) {
+          setPhase('processing')
+        }
       }
-
-      const originalSize = parseInt(response.headers.get('X-Original-Size') || '0', 10)
-      const compressedSize = parseInt(response.headers.get('X-Compressed-Size') || '0', 10)
-      const reduction = parseInt(response.headers.get('X-Reduction-Percent') || '0', 10)
-
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `compressed_${Date.now()}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-
-      setResult({ originalSize, compressedSize, reduction })
-    } catch (err) {
-      setError(err.message || 'Something went wrong. Please try again.')
-    } finally {
-      setProcessing(false)
     }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const originalSize = parseInt(xhr.getResponseHeader('X-Original-Size') || '0', 10)
+        const compressedSize = parseInt(xhr.getResponseHeader('X-Compressed-Size') || '0', 10)
+        const reduction = parseInt(xhr.getResponseHeader('X-Reduction-Percent') || '0', 10)
+
+        const blob = xhr.response
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `compressed_${Date.now()}.pdf`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+
+        setResult({ originalSize, compressedSize, reduction })
+        setProcessing(false)
+        setPhase('')
+      } else {
+        const reader = new FileReader()
+        reader.onload = () => {
+          let msg = 'Compression failed'
+          try {
+            msg = JSON.parse(reader.result).error || msg
+          } catch (e) {
+            // ignore
+          }
+          setError(msg)
+          setProcessing(false)
+          setPhase('')
+        }
+        reader.readAsText(xhr.response)
+      }
+    }
+
+    xhr.onerror = () => {
+      setError('A network error occurred. Please try again.')
+      setProcessing(false)
+      setPhase('')
+    }
+
+    xhr.send(formData)
   }
 
   return (
@@ -144,6 +205,18 @@ function CompressTool() {
         </div>
       )}
 
+      {processing && phase === 'processing' && (
+        <div className="tool-progress-card" style={{ marginTop: '1rem', padding: '1rem', background: 'var(--surface-50)', borderRadius: '8px', border: '1px solid var(--surface-200)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <strong>{processingStatus}</strong>
+            <span>{processingProgress}%</span>
+          </div>
+          <div style={{ width: '100%', height: '8px', background: 'var(--surface-200)', borderRadius: '4px', overflow: 'hidden' }}>
+            <div style={{ width: `${processingProgress}%`, height: '100%', background: 'var(--primary)', transition: 'width 0.5s ease' }} />
+          </div>
+        </div>
+      )}
+
       <div className="tool-footer-actions">
         <button
           className="btn-primary"
@@ -151,7 +224,10 @@ function CompressTool() {
           onClick={handleCompress}
           disabled={processing || !file}
         >
-          {processing ? 'Compressing...' : 'Compress PDF'}
+          {processing 
+            ? (phase === 'uploading' ? `Uploading... ${progress}%` : 'Compressing PDF...')
+            : 'Compress PDF'
+          }
         </button>
       </div>
     </div>
