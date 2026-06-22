@@ -24,3 +24,4 @@ Exports the assembled document pages from the dedicated document step.
 
 - The current client UI exports entirely in-browser.
 - The server endpoint `/api/pdf/generate` exists, but `ExportPanel.jsx` does not call it yet.
+- For server-side PDF operations (combine, split, compress), see the `tools/` module.
