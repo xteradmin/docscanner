@@ -288,6 +288,9 @@ POST /api/auth/login          - Login, returns JWT
 GET  /api/auth/me             - Get current user
 
 POST /api/pdf/generate        - Generate PDF from uploaded images
+POST /api/pdf/merge           - Merge 2+ PDFs into one (pdf-lib copyPages)
+POST /api/pdf/split           - Split PDF by page ranges (ZIP via archiver)
+POST /api/pdf/compress        - Compress PDF with structural optimization
 GET  /api/pdf/:id/download    - Download generated PDF
 
 POST /api/documents           - Save document (requires auth)
@@ -663,11 +666,14 @@ Coolify's Traefik auto-provisions Let's Encrypt SSL certificates for any `Host()
 ## 9. Key Technical Decisions
 
 | Decision | Choice | Rationale |
-|----------|--------|-----------|
+|----------|--------|------------|
 | Client-side detection | `jeeliz-docscanner` first, OpenCV.js fallback | 100KB vs 8MB; lighter initial load |
 | Perspective correction | `perspective-transform` npm | Pure JS, no WASM, sufficient for 4-point warp |
 | Image filters | Canvas API (built-in) | Zero deps, full pixel control, fast |
-| Server PDF | `pdf-lib` | Smaller than PDFKit, better async API |
+| Server PDF | `pdf-lib` | Smaller than PDFKit, better async API, supports merge/split |
+| PDF Tools processing | Server-side | `pdf-lib` + `archiver` on server keeps client bundle small |
+| PDF Split ZIP | `archiver` | Standard ZIP library, CJS-only (uses `createRequire` in ESM) |
+| PDF Compress | Structural only (`pdf-lib` `useObjectStreams`) | No image re-encoding dependency, works on all PDFs |
 | Database | SQLite via `better-sqlite3` | Embedded, no external DB needed |
 | Auth | Optional JWT | App works without accounts; auth only for saving |
 | State persistence | IndexedDB | Handles large blobs, survives page refresh |
