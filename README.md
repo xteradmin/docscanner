@@ -11,10 +11,18 @@ DocScanner is a browser-based document scanner built with React and Express. It 
 4. Add the processed page to a document.
 5. Export the document or add another image to combine into the same PDF.
 
-### PDF Tools (`/tools`)
+### Tools Page (`/`)
+The home page provides a categorized list of available utilities:
+
+**PDF Tools**
 1. **Combine**: Upload 1+ PDF files, visually arrange and reorder specific pages via a high-performance drag-and-drop grid, and merge into a single PDF.
 2. **Split**: Upload a PDF, choose page ranges or split every page, download as ZIP or single PDF.
 3. **Compress**: Upload a PDF, optimize its internal structure, download a smaller file with size reduction stats.
+
+**Image Tools**
+1. **DocScanner**: Launch the camera/image capture workflow at `/scanner` to detect document edges, perspective correct, and assemble into a PDF.
+2. **Resize Image**: Resize an image by specifying exact width and height or maintaining aspect ratio. 
+3. **Compress Image**: Compress images by lowering visual quality or converting between JPEG/WebP formats with live previews and estimated file size.
 
 ## Implemented Features
 
@@ -29,10 +37,9 @@ DocScanner is a browser-based document scanner built with React and Express. It 
 - Client-side export to PDF, JPG, or PNG with format cards, selected-format summary, disabled export states, and visible export errors.
 - User-facing recovery messages for failed edge detection, crop processing, image filtering, invalid uploads, and export failures.
 - Server endpoints for health checks, PDF generation, and stub document metadata creation.
-- **PDF Tools page** with navigation bar, tool selection cards, and three server-side utilities:
-  - **Combine PDFs** (`POST /api/pdf/merge`): Parses PDFs client-side for visual thumbnail generation, allows specific page-level reordering via native drag-and-drop, and merges via `pdf-lib`.
-  - **Split PDF** (`POST /api/pdf/split`): extracts page ranges or splits every page into a ZIP via `archiver`.
-  - **Compress PDF** (`POST /api/pdf/compress`): repacks with optimized object streams, returns size reduction stats, and features XHR upload progress with simulated processing animations for large files.
+- **Tools page** as the new home (`/`) providing a categorized selection of tools:
+  - **PDF Tools**: Includes Combine, Split, and Compress (server-side utilities).
+  - **Image Tools**: Includes the main DocScanner interface (`/scanner`), Resize Image (Canvas API), and Compress Image (Canvas API with live previews).
 
 
 ## Performance & Optimizations
@@ -96,8 +103,8 @@ The Docker image builds the Vite client, installs the Express server runtime dep
 
 ### Pages
 
-- `ScannerPage.jsx`: main scanner workflow at `/`.
-- `ToolsPage.jsx`: PDF Tools selection and active tool workspace at `/tools`.
+- `ScannerPage.jsx`: main scanner workflow at `/scanner`.
+- `ToolsPage.jsx`: categorized tools selection and active tool workspace at `/`.
 
 ### Server modules
 

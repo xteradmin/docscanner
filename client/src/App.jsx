@@ -10,8 +10,8 @@ function App() {
       <Router>
         <Layout>
           <Routes>
-            <Route path="/" element={<ScannerPage />} />
-            <Route path="/tools" element={<ToolsPage />} />
+            <Route path="/" element={<ToolsPage />} />
+            <Route path="/scanner" element={<ScannerPage />} />
           </Routes>
         </Layout>
       </Router>
