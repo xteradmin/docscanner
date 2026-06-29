@@ -2,13 +2,32 @@ import { Router } from 'express'
 import multer from 'multer'
 import { PDFDocument } from 'pdf-lib'
 import { v4 as uuidv4 } from 'uuid'
-import { writeFile, mkdir } from 'fs/promises'
+import { writeFile, mkdir, unlink } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
+import { tmpdir } from 'os'
 import { ZipArchive } from 'archiver'
+import youtubedl from 'youtube-dl-exec'
+import ffmpeg from 'fluent-ffmpeg'
+import ffmpegStatic from 'ffmpeg-static'
+
+// Tell fluent-ffmpeg to use the static binary we just installed
+ffmpeg.setFfmpegPath(ffmpegStatic)
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } })
+
+// In-memory store for real-time video processing progress
+const jobProgress = new Map()
+
+router.get('/video/progress/:jobId', (req, res) => {
+  const p = jobProgress.get(req.params.jobId)
+  if (p === undefined) return res.json({ progress: 0, timemark: '00:00:00' })
+  res.json({ 
+    progress: p.percent !== undefined ? p.percent : -1,
+    timemark: p.timemark || '00:00:00'
+  })
+})
 
 router.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
@@ -248,5 +267,133 @@ function formatRangeLabel(indices) {
   const last = indices[indices.length - 1] + 1
   return `${first}-${last}`
 }
+
+// ─── Video Tools ────────────────────────────────────────────────────────────────
+
+router.post('/video/download', async (req, res) => {
+  try {
+    const { url } = req.body
+    if (!url) return res.status(400).json({ error: 'URL is required' })
+
+    const filename = `video_${Date.now()}.mp4`
+    const filepath = path.join(tmpdir(), filename)
+
+    await youtubedl(url, {
+      output: filepath,
+      format: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4',
+      mergeOutputFormat: 'mp4',
+      ffmpegLocation: ffmpegStatic
+    })
+
+    if (!existsSync(filepath)) {
+      return res.status(500).json({ error: 'Video downloaded but failed to merge. Please ensure FFmpeg is in your system PATH and restart the server.' })
+    }
+
+    res.download(filepath, filename, async (err) => {
+      if (err) {
+        console.error('File send error:', err)
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Failed to send downloaded video' })
+        }
+      }
+      await unlink(filepath).catch(() => {})
+    })
+  } catch (error) {
+    console.error('Video download error:', error)
+    res.status(500).json({ error: 'Failed to download video' })
+  }
+})
+
+router.post('/video/compress', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Please upload a video file to compress.' })
+    const { quality = '480p', jobId, duration } = req.body
+
+    const inputPath = path.join(tmpdir(), `input_${Date.now()}.mp4`)
+    const outputPath = path.join(tmpdir(), `compressed_${Date.now()}.mp4`)
+    await writeFile(inputPath, req.file.buffer)
+
+    if (jobId) jobProgress.set(jobId, { percent: -1, timemark: '00:00:00' })
+
+    const totalSeconds = duration ? parseFloat(duration) : null
+
+    const qualitySettings = {
+      '240p': { res: '426x240', vb: '500k' },
+      '360p': { res: '640x360', vb: '800k' },
+      '480p': { res: '854x480', vb: '1000k' },
+      '720p': { res: '1280x720', vb: '2000k' },
+      '1080p': { res: '1920x1080', vb: '4000k' },
+    }
+
+    const qs = qualitySettings[quality] || qualitySettings['480p']
+
+    await new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .outputOptions([
+          '-y',
+          '-c:v libx264',
+          '-preset ultrafast',
+          '-crf 23',
+          `-b:v ${qs.vb}`,
+          `-s ${qs.res}`,
+          '-c:a aac',
+          '-b:a 128k',
+          '-movflags +faststart'
+        ])
+        .on('progress', (progress) => {
+          if (jobId) {
+            let p = jobProgress.get(jobId) || { percent: -1, timemark: '00:00:00' }
+            
+            // Try to calculate percentage manually if duration is provided
+            if (progress.timemark) {
+              p.timemark = progress.timemark
+              if (totalSeconds && totalSeconds > 0) {
+                const parts = progress.timemark.split(':')
+                if (parts.length === 3) {
+                  const h = parseFloat(parts[0]) || 0
+                  const m = parseFloat(parts[1]) || 0
+                  const s = parseFloat(parts[2]) || 0
+                  const currentSeconds = (h * 3600) + (m * 60) + s
+                  progress.percent = (currentSeconds / totalSeconds) * 100
+                }
+              }
+            }
+
+            if (progress.percent !== undefined && !isNaN(progress.percent)) {
+              let pct = Math.floor(progress.percent)
+              if (pct < 0) pct = 0
+              if (pct > 99) pct = 99
+              p.percent = pct
+            }
+            
+            jobProgress.set(jobId, p)
+          }
+        })
+        .on('end', () => {
+          if (jobId) jobProgress.set(jobId, { percent: 100, timemark: 'Done' })
+          resolve()
+        })
+        .on('error', (err) => {
+          if (jobId) jobProgress.delete(jobId)
+          reject(err)
+        })
+        .save(outputPath)
+    })
+
+    const originalname = req.file.originalname || 'video.mp4'
+    const compressedFilename = `compressed_${originalname}`
+
+    res.download(outputPath, compressedFilename, async (err) => {
+      if (jobId) jobProgress.delete(jobId)
+      await unlink(inputPath).catch(console.error)
+      if (!err) {
+        await unlink(outputPath).catch(console.error)
+      }
+    })
+  } catch (error) {
+    console.error('Video compress error:', error)
+    res.status(500).json({ error: 'Failed to compress video' })
+  }
+})
 
 export default router

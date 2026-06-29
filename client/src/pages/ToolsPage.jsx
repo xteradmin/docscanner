@@ -5,6 +5,8 @@ import SplitTool from '../modules/tools/SplitTool'
 import CompressTool from '../modules/tools/CompressTool'
 import ImageResizeTool from '../modules/tools/ImageResizeTool'
 import ImageCompressTool from '../modules/tools/ImageCompressTool'
+import VideoDownloadTool from '../modules/tools/VideoDownloadTool'
+import VideoCompressTool from '../modules/tools/VideoCompressTool'
 
 const PDF_TOOLS = [
   {
@@ -60,8 +62,27 @@ const TOOL_COMPONENTS = {
   split: SplitTool,
   compress: CompressTool,
   imageresize: ImageResizeTool,
-  imagecompress: ImageCompressTool
+  imagecompress: ImageCompressTool,
+  videodownload: VideoDownloadTool,
+  videocompress: VideoCompressTool
 }
+
+const VIDEO_TOOLS = [
+  {
+    id: 'videodownload',
+    title: 'Download Video',
+    description: 'Download videos from supported platforms directly via URL.',
+    icon: '📥',
+    detail: 'URL → Video File'
+  },
+  {
+    id: 'videocompress',
+    title: 'Compress Video',
+    description: 'Reduce video file size by adjusting resolution and bitrate.',
+    icon: '🗜️',
+    detail: 'Smaller video size'
+  }
+]
 
 function ToolsPage() {
   const [activeTool, setActiveTool] = useState(null)
@@ -120,6 +141,28 @@ function ToolsPage() {
             <h2 className="category-title" style={{ marginBottom: '1rem', fontSize: '1.25rem', fontWeight: '600' }}>Image Tools</h2>
             <div className="tools-grid">
               {IMAGE_TOOLS.map(tool => (
+                <button
+                  key={tool.id}
+                  className="tool-card"
+                  type="button"
+                  onClick={() => handleToolClick(tool)}
+                >
+                  <span className="tool-icon" aria-hidden="true">{tool.icon}</span>
+                  <div className="tool-body">
+                    <strong>{tool.title}</strong>
+                    <p>{tool.description}</p>
+                    <span className="tool-detail">{tool.detail}</span>
+                  </div>
+                  <span className="tool-arrow" aria-hidden="true">→</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="tools-category" style={{ marginBottom: '2rem' }}>
+            <h2 className="category-title" style={{ marginBottom: '1rem', fontSize: '1.25rem', fontWeight: '600' }}>Video Tools</h2>
+            <div className="tools-grid">
+              {VIDEO_TOOLS.map(tool => (
                 <button
                   key={tool.id}
                   className="tool-card"
