@@ -2,7 +2,7 @@ import { Router } from 'express'
 import multer from 'multer'
 import { PDFDocument } from 'pdf-lib'
 import { v4 as uuidv4 } from 'uuid'
-import { writeFile, mkdir, unlink } from 'fs/promises'
+import { writeFile, mkdir, unlink, readdir, stat } from 'fs/promises'
 import { existsSync, readFileSync } from 'fs'
 import path from 'path'
 import { tmpdir } from 'os'
@@ -57,6 +57,50 @@ function loadJobs() {
 }
 
 loadJobs()
+
+// ─── Temp file cleanup (every hour, remove files older than 1 day) ─────────────
+const TEMP_MAX_AGE_MS = 24 * 60 * 60 * 1000
+const TEMP_PREFIXES = ['video_', 'compressed_', 'input_', 'batch_urls_']
+
+async function cleanupTempFiles() {
+  try {
+    const dir = tmpdir()
+    const files = await readdir(dir)
+    const now = Date.now()
+    let removed = 0
+
+    for (const file of files) {
+      if (!TEMP_PREFIXES.some(p => file.startsWith(p))) continue
+      try {
+        const filePath = path.join(dir, file)
+        const s = await stat(filePath)
+        if (now - s.mtimeMs > TEMP_MAX_AGE_MS) {
+          await unlink(filePath)
+          removed++
+        }
+      } catch { /* file may have been deleted already */ }
+    }
+
+    // Purge jobs whose resultPath no longer exists
+    let purged = 0
+    for (const [jid, job] of videoJobs) {
+      if (job.status === 'done' && job.resultPath && !existsSync(job.resultPath)) {
+        videoJobs.delete(jid)
+        purged++
+      }
+    }
+    if (purged > 0) saveJobs()
+
+    if (removed > 0 || purged > 0) {
+      console.log(`Temp cleanup: removed ${removed} files, purged ${purged} stale jobs`)
+    }
+  } catch (e) {
+    console.error('Temp cleanup error:', e.message)
+  }
+}
+
+cleanupTempFiles()
+setInterval(cleanupTempFiles, 60 * 60 * 1000)
 
 router.get('/video/job/:jobId', (req, res) => {
   const job = videoJobs.get(req.params.jobId)
