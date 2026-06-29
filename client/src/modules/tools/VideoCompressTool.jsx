@@ -3,6 +3,9 @@ import React, { useState, useEffect } from 'react'
 function VideoCompressTool() {
   const [file, setFile] = useState(null)
   const [quality, setQuality] = useState('480p')
+  const [speed, setSpeed] = useState('ultrafast')
+  const [outFormat, setOutFormat] = useState('mp4')
+  const [removeAudio, setRemoveAudio] = useState(false)
   const [error, setError] = useState(null)
   
   const [processing, setProcessing] = useState(false)
@@ -11,39 +14,63 @@ function VideoCompressTool() {
   const [processingProgress, setProcessingProgress] = useState(0)
   const [processingTimemark, setProcessingTimemark] = useState(null)
   const [processingStatus, setProcessingStatus] = useState('Initializing...')
-  const [jobId, setJobId] = useState(null)
+  const [jobId, setJobId] = useState(() => localStorage.getItem('compressJobId') || null)
   const [videoDuration, setVideoDuration] = useState(0)
 
   const qualities = ['240p', '360p', '480p', '720p', '1080p']
 
   useEffect(() => {
-    if (phase !== 'processing' || !jobId) {
+    if (!jobId) {
       return
     }
     
+    setProcessing(true)
+    setPhase('processing')
+
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/video/progress/${jobId}`)
+        const res = await fetch(`/api/video/job/${jobId}`)
         if (res.ok) {
           const data = await res.json()
           
-          let currentP = 0
-          if (data.progress === -1) {
-            setProcessingTimemark(data.timemark || '00:00:00')
-            setProcessingStatus(`Encoding video...`)
-            setProcessingProgress(prev => {
-              let next = prev + (Math.random() * 2.5)
-              currentP = next > 95 ? 95 : Math.floor(next)
-              return currentP
-            })
-          } else {
+          if (data.status === 'error') {
+            setError(data.error || 'Compression failed.')
+            setProcessing(false)
+            setPhase('')
+            setJobId(null)
+            localStorage.removeItem('compressJobId')
+            clearInterval(interval)
+          } else if (data.status === 'done') {
+            setProcessingStatus('Compression complete!')
+            setProcessingProgress(100)
             setProcessingTimemark(null)
-            currentP = data.progress || 0
-            setProcessingProgress(currentP)
-            if (currentP < 20) setProcessingStatus('Analyzing video streams...')
-            else if (currentP < 95) setProcessingStatus('Applying FFmpeg compression filters...')
-            else setProcessingStatus('Finalizing MP4 container...')
+            setPhase('done')
+            clearInterval(interval)
+          } else {
+            let currentP = 0
+            if (data.percent === -1) {
+              setProcessingTimemark(data.timemark || '00:00:00')
+              setProcessingStatus(`Encoding video...`)
+              setProcessingProgress(prev => {
+                let next = prev + (Math.random() * 2.5)
+                currentP = next > 95 ? 95 : Math.floor(next)
+                return currentP
+              })
+            } else {
+              setProcessingTimemark(null)
+              currentP = data.percent || 0
+              setProcessingProgress(currentP)
+              if (currentP < 20) setProcessingStatus('Analyzing video streams...')
+              else if (currentP < 95) setProcessingStatus('Applying FFmpeg compression filters...')
+              else setProcessingStatus('Finalizing MP4 container...')
+            }
           }
+        } else if (res.status === 404) {
+          setProcessing(false)
+          setPhase('')
+          setJobId(null)
+          localStorage.removeItem('compressJobId')
+          clearInterval(interval)
         }
       } catch (e) {
         // silently fail on poll error
@@ -51,14 +78,20 @@ function VideoCompressTool() {
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [phase, jobId])
+  }, [jobId])
 
   const handleCompress = (e) => {
     e.preventDefault()
     if (!file) return
 
+    if (!file.type.startsWith('video/')) {
+      setError('Please select a valid video file.')
+      return
+    }
+
     const newJobId = Date.now().toString()
     setJobId(newJobId)
+    localStorage.setItem('compressJobId', newJobId)
     setProcessing(true)
     setPhase('uploading')
     setUploadProgress(0)
@@ -68,69 +101,41 @@ function VideoCompressTool() {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('quality', quality)
+    formData.append('speed', speed)
+    formData.append('outFormat', outFormat)
+    formData.append('removeAudio', removeAudio)
     formData.append('jobId', newJobId)
     if (videoDuration) formData.append('duration', videoDuration)
 
     const xhr = new XMLHttpRequest()
     xhr.open('POST', '/api/video/compress')
-    xhr.responseType = 'blob'
 
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) {
         const percent = Math.round((event.loaded / event.total) * 100)
         setUploadProgress(percent)
-        if (percent >= 100 && phase !== 'downloading') {
+        if (percent === 100) {
           setPhase('processing')
+          setProcessingStatus('Starting compression...')
         }
-      }
-    }
-
-    xhr.onprogress = (event) => {
-      if (event.lengthComputable) {
-        setPhase('downloading')
-        const percent = Math.round((event.loaded / event.total) * 100)
-        setProcessingProgress(percent)
-        setProcessingStatus('Downloading compressed video...')
       }
     }
 
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        const blob = xhr.response
-        const downloadUrl = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.style.display = 'none'
-        a.href = downloadUrl
-        
-        const contentDisposition = xhr.getResponseHeader('content-disposition')
-        let filename = `compressed_${file.name}`
-        if (contentDisposition && contentDisposition.includes('filename=')) {
-          const match = contentDisposition.match(/filename="?([^"]+)"?/)
-          if (match && match[1]) {
-            filename = match[1]
-          }
+        // Initial upload finished, job is queued
+        setPhase('processing')
+      } else {
+        try {
+          const data = JSON.parse(xhr.responseText)
+          setError(data.error || 'Failed to start compression')
+        } catch {
+          setError('Failed to start compression')
         }
-        
-        a.download = filename
-        document.body.appendChild(a)
-        a.click()
-        window.URL.revokeObjectURL(downloadUrl)
-        a.remove()
-        
         setProcessing(false)
         setPhase('')
-      } else {
-        const reader = new FileReader()
-        reader.onload = () => {
-          let msg = 'Failed to compress video'
-          try {
-            msg = JSON.parse(reader.result).error || msg
-          } catch (err) {}
-          setError(msg)
-          setProcessing(false)
-          setPhase('')
-        }
-        reader.readAsText(xhr.response)
+        setJobId(null)
+        localStorage.removeItem('compressJobId')
       }
     }
 
@@ -143,12 +148,68 @@ function VideoCompressTool() {
     xhr.send(formData)
   }
 
+  const handleClearJob = async () => {
+    if (jobId) {
+      await fetch(`/api/video/job/${jobId}`, { method: 'DELETE' }).catch(() => {})
+      setJobId(null)
+      localStorage.removeItem('compressJobId')
+    }
+    setProcessing(false)
+    setPhase('')
+    setFile(null)
+    setProcessingProgress(0)
+    setUploadProgress(0)
+    setError(null)
+  }
+
   return (
-    <div className="tool-container" style={{ padding: '2rem', maxWidth: '600px', margin: '0 auto', backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
-      <h2 style={{ marginBottom: '1rem', color: '#333' }}>Compress Video</h2>
-      <p style={{ marginBottom: '1.5rem', color: '#666' }}>Upload a video file to compress and reduce its file size.</p>
-      
-      <form onSubmit={handleCompress} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+      <h2 style={{ marginBottom: '1.5rem', color: '#1976d2' }}>Compress Video</h2>
+      <p style={{ marginBottom: '2rem', color: '#666', lineHeight: '1.6' }}>
+        Reduce the file size of your videos. Select your target quality and adjust advanced settings.
+      </p>
+
+      {phase === 'done' ? (
+        <div style={{ padding: '2rem', backgroundColor: '#e8f5e9', borderRadius: '8px', textAlign: 'center', border: '1px solid #c8e6c9' }}>
+          <h3 style={{ color: '#2e7d32', marginBottom: '1rem' }}>Compression Complete!</h3>
+          <p style={{ marginBottom: '1.5rem', color: '#1b5e20' }}>Your video has been successfully compressed and is ready to download.</p>
+          <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+            <a 
+              href={`/api/video/result/${jobId}`} 
+              style={{
+                display: 'inline-block',
+                padding: '0.75rem 2rem',
+                backgroundColor: '#1976d2',
+                color: 'white',
+                textDecoration: 'none',
+                borderRadius: '4px',
+                fontWeight: '600',
+                fontSize: '1rem',
+                transition: 'background-color 0.2s'
+              }}
+            >
+              Download Result
+            </a>
+            <button 
+              onClick={handleClearJob}
+              style={{
+                padding: '0.75rem 2rem',
+                backgroundColor: 'white',
+                color: '#d32f2f',
+                border: '1px solid #d32f2f',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: '600',
+                fontSize: '1rem',
+                transition: 'background-color 0.2s'
+              }}
+            >
+              Compress Another
+            </button>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={handleCompress} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         <div>
           <label htmlFor="videoFile" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Select Video</label>
           <input
@@ -173,18 +234,60 @@ function VideoCompressTool() {
           />
         </div>
         
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+          <div>
+            <label htmlFor="quality" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Target Quality</label>
+            <select
+              id="quality"
+              value={quality}
+              onChange={(e) => setQuality(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc', backgroundColor: 'white' }}
+            >
+              {qualities.map(q => (
+                <option key={q} value={q}>{q}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="outFormat" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Output Format</label>
+            <select
+              id="outFormat"
+              value={outFormat}
+              onChange={(e) => setOutFormat(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc', backgroundColor: 'white' }}
+            >
+              <option value="mp4">MP4 (H.264)</option>
+              <option value="webm">WebM (VP9)</option>
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="speed" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Encoding Speed</label>
+            <select
+              id="speed"
+              value={speed}
+              onChange={(e) => setSpeed(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc', backgroundColor: 'white' }}
+            >
+              <option value="ultrafast">Ultrafast (Largest File)</option>
+              <option value="fast">Fast (Balanced)</option>
+              <option value="medium">Medium</option>
+              <option value="slow">Slow (Smallest File)</option>
+            </select>
+          </div>
+        </div>
+
         <div>
-          <label htmlFor="quality" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Target Quality</label>
-          <select
-            id="quality"
-            value={quality}
-            onChange={(e) => setQuality(e.target.value)}
-            style={{ width: '100%', padding: '0.75rem', borderRadius: '4px', border: '1px solid #ccc', fontSize: '1rem', backgroundColor: '#fff' }}
-          >
-            {qualities.map(q => (
-              <option key={q} value={q}>{q}</option>
-            ))}
-          </select>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '500', cursor: 'pointer' }}>
+            <input 
+              type="checkbox" 
+              checked={removeAudio} 
+              onChange={(e) => setRemoveAudio(e.target.checked)} 
+              style={{ width: '16px', height: '16px' }}
+            />
+            Remove Audio (Mute)
+          </label>
         </div>
         
         {error && <div style={{ color: '#d32f2f', padding: '0.75rem', backgroundColor: '#ffebee', borderRadius: '4px' }}>{error}</div>}
@@ -239,6 +342,7 @@ function VideoCompressTool() {
           {processing ? 'Processing...' : 'Compress Video'}
         </button>
       </form>
+      )}
     </div>
   )
 }

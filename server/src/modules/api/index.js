@@ -3,7 +3,7 @@ import multer from 'multer'
 import { PDFDocument } from 'pdf-lib'
 import { v4 as uuidv4 } from 'uuid'
 import { writeFile, mkdir, unlink } from 'fs/promises'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import path from 'path'
 import { tmpdir } from 'os'
 import { ZipArchive } from 'archiver'
@@ -15,18 +15,70 @@ import ffmpegStatic from 'ffmpeg-static'
 ffmpeg.setFfmpegPath(ffmpegStatic)
 
 const router = Router()
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } })
 
-// In-memory store for real-time video processing progress
-const jobProgress = new Map()
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, tmpdir()),
+  filename: (req, file, cb) => cb(null, `input_${Date.now()}_${file.originalname.replace(/[^a-zA-Z0-9.]/g, '')}`)
+})
+const upload = multer({ storage })
 
-router.get('/video/progress/:jobId', (req, res) => {
-  const p = jobProgress.get(req.params.jobId)
-  if (p === undefined) return res.json({ progress: 0, timemark: '00:00:00' })
-  res.json({ 
-    progress: p.percent !== undefined ? p.percent : -1,
-    timemark: p.timemark || '00:00:00'
-  })
+// Persistent video jobs store
+const JOBS_FILE = path.join(tmpdir(), 'docscanner_video_jobs.json')
+const videoJobs = new Map()
+
+function saveJobs() {
+  const obj = {}
+  for (const [k, v] of videoJobs) obj[k] = v
+  writeFile(JOBS_FILE, JSON.stringify(obj, null, 2)).catch(() => {})
+}
+
+function loadJobs() {
+  try {
+    if (!existsSync(JOBS_FILE)) return
+    const raw = readFileSync(JOBS_FILE, 'utf-8')
+    const obj = JSON.parse(raw)
+    for (const [k, v] of Object.entries(obj)) {
+      // Jobs that were mid-download when server stopped are stuck — mark as error
+      if (v.status === 'processing') {
+        v.status = 'error'
+        v.error = 'Download interrupted (server restarted).'
+      }
+      // Verify done jobs still have their file
+      if (v.status === 'done' && v.resultPath && !existsSync(v.resultPath)) {
+        v.status = 'error'
+        v.error = 'File no longer available.'
+      }
+      videoJobs.set(k, v)
+    }
+    console.log(`Loaded ${videoJobs.size} saved video jobs`)
+  } catch (e) {
+    console.error('Failed to load video jobs:', e.message)
+  }
+}
+
+loadJobs()
+
+router.get('/video/job/:jobId', (req, res) => {
+  const job = videoJobs.get(req.params.jobId)
+  if (!job) return res.status(404).json({ error: 'Job not found' })
+  res.json(job)
+})
+
+router.get('/video/result/:jobId', (req, res) => {
+  const job = videoJobs.get(req.params.jobId)
+  if (!job || job.status !== 'done') return res.status(400).json({ error: 'Not ready' })
+  
+  res.download(job.resultPath, job.filename)
+})
+
+router.delete('/video/job/:jobId', async (req, res) => {
+  const job = videoJobs.get(req.params.jobId)
+  if (job) {
+    if (job.resultPath) await unlink(job.resultPath).catch(() => {})
+    videoJobs.delete(req.params.jobId)
+    saveJobs()
+  }
+  res.json({ success: true })
 })
 
 router.get('/health', (req, res) => {
@@ -270,130 +322,365 @@ function formatRangeLabel(indices) {
 
 // ─── Video Tools ────────────────────────────────────────────────────────────────
 
-router.post('/video/download', async (req, res) => {
+function getDownloadArgs(url, downloadFormat, filepath) {
+  const isAudio = downloadFormat === 'mp3'
+  const isWebm = downloadFormat.endsWith('-webm')
+  const args = [
+    url,
+    '-o', filepath,
+    '--ffmpeg-location', ffmpegStatic,
+    '--no-playlist',
+    '--newline'
+  ]
+  if (isAudio) {
+    args.push('--extract-audio', '--audio-format', 'mp3', '-f', 'bestaudio/best')
+  } else if (downloadFormat === 'best') {
+    args.push('--merge-output-format', 'mp4', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best')
+  } else if (isWebm) {
+    const height = downloadFormat.split('-')[0].replace('p', '')
+    args.push('--merge-output-format', 'webm', '-f', `bestvideo[height<=${height}][ext=webm]+bestaudio[ext=webm]/best[height<=${height}][ext=webm]/best[ext=webm]`)
+  } else {
+    const height = downloadFormat.replace('p', '')
+    args.push('--merge-output-format', 'mp4', '-f', `bestvideo[height<=${height}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${height}][ext=mp4]/best[ext=mp4]`)
+  }
+  return args
+}
+
+function formatBytes(bytes) {
+  if (!bytes || isNaN(bytes)) return null
+  const units = ['B', 'KB', 'MB', 'GB']
+  let i = 0
+  let size = bytes
+  while (size >= 1024 && i < units.length - 1) { size /= 1024; i++ }
+  return `${size.toFixed(size >= 100 ? 0 : 1)} ${units[i]}`
+}
+
+router.post('/video/size', async (req, res) => {
+  const { url, downloadFormat = 'best' } = req.body
+  if (!url) return res.status(400).json({ error: 'URL is required' })
+
   try {
-    const { url } = req.body
-    if (!url) return res.status(400).json({ error: 'URL is required' })
+    const { spawn } = await import('child_process')
+    const { createRequire } = await import('module')
+    const require = createRequire(import.meta.url)
+    const ytdlpBin = path.join(path.dirname(require.resolve('youtube-dl-exec')), '..', 'bin', 'yt-dlp.exe')
 
-    const filename = `video_${Date.now()}.mp4`
-    const filepath = path.join(tmpdir(), filename)
+    const args = [url, '--no-playlist', '--print', 'filesize_approx']
+    const fmtArgs = getDownloadArgs(url, downloadFormat, '/dev/null')
+    const fmtIdx = fmtArgs.indexOf('-f')
+    if (fmtIdx !== -1) args.push('-f', fmtArgs[fmtIdx + 1])
+    const mergeIdx = fmtArgs.indexOf('--merge-output-format')
+    if (mergeIdx !== -1) args.push('--merge-output-format', fmtArgs[mergeIdx + 1])
+    const audioIdx = fmtArgs.indexOf('--extract-audio')
+    if (audioIdx !== -1) args.push('--extract-audio', '--audio-format', fmtArgs[fmtArgs.indexOf('--audio-format') + 1])
 
-    await youtubedl(url, {
-      output: filepath,
-      format: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4',
-      mergeOutputFormat: 'mp4',
-      ffmpegLocation: ffmpegStatic
+    const sizeBytes = await new Promise((resolve) => {
+      const proc = spawn(ytdlpBin, args, { windowsHide: true })
+      let stdout = ''
+      proc.stdout.on('data', (chunk) => { stdout += chunk.toString() })
+      proc.stderr.on('data', () => {})
+      proc.on('close', (code) => {
+        if (code === 0) {
+          const val = parseInt(stdout.trim(), 10)
+          resolve(isNaN(val) ? null : val)
+        } else {
+          resolve(null)
+        }
+      })
+      proc.on('error', () => resolve(null))
     })
 
-    if (!existsSync(filepath)) {
-      return res.status(500).json({ error: 'Video downloaded but failed to merge. Please ensure FFmpeg is in your system PATH and restart the server.' })
+    res.json({ sizeBytes, size: formatBytes(sizeBytes) })
+  } catch (err) {
+    res.json({ sizeBytes: null, size: null })
+  }
+})
+
+router.post('/video/sizes', async (req, res) => {
+  const { urls, downloadFormat = 'best' } = req.body
+  if (!urls || !Array.isArray(urls) || urls.length === 0) return res.status(400).json({ error: 'urls array is required' })
+
+  try {
+    const { spawn } = await import('child_process')
+    const { createRequire } = await import('module')
+    const require = createRequire(import.meta.url)
+    const ytdlpBin = path.join(path.dirname(require.resolve('youtube-dl-exec')), '..', 'bin', 'yt-dlp.exe')
+
+    const batchFile = path.join(tmpdir(), `batch_urls_${Date.now()}.txt`)
+    await writeFile(batchFile, urls.join('\n'))
+
+    const fmtArgs = getDownloadArgs(urls[0], downloadFormat, '/dev/null')
+    const fmtIdx = fmtArgs.indexOf('-f')
+    const mergeIdx = fmtArgs.indexOf('--merge-output-format')
+    const audioIdx = fmtArgs.indexOf('--extract-audio')
+
+    const args = [
+      '--batch-file', batchFile,
+      '--no-playlist',
+      '--print', '%(id)s %(filesize_approx)s'
+    ]
+    if (fmtIdx !== -1) args.push('-f', fmtArgs[fmtIdx + 1])
+    if (mergeIdx !== -1) args.push('--merge-output-format', fmtArgs[mergeIdx + 1])
+    if (audioIdx !== -1) args.push('--extract-audio', '--audio-format', fmtArgs[fmtArgs.indexOf('--audio-format') + 1])
+
+    const output = await new Promise((resolve) => {
+      const proc = spawn(ytdlpBin, args, { windowsHide: true })
+      let stdout = ''
+      proc.stdout.on('data', (chunk) => { stdout += chunk.toString() })
+      proc.stderr.on('data', () => {})
+      proc.on('close', () => resolve(stdout))
+      proc.on('error', () => resolve(''))
+    })
+
+    const sizeMap = {}
+    for (const line of output.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      const spaceIdx = trimmed.indexOf(' ')
+      if (spaceIdx === -1) continue
+      const id = trimmed.substring(0, spaceIdx)
+      const bytes = parseInt(trimmed.substring(spaceIdx + 1), 10)
+      if (!isNaN(bytes) && bytes > 0) sizeMap[id] = formatBytes(bytes)
     }
 
-    res.download(filepath, filename, async (err) => {
-      if (err) {
-        console.error('File send error:', err)
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Failed to send downloaded video' })
-        }
-      }
-      await unlink(filepath).catch(() => {})
-    })
-  } catch (error) {
-    console.error('Video download error:', error)
-    res.status(500).json({ error: 'Failed to download video' })
+    unlink(batchFile).catch(() => {})
+    res.json({ sizes: sizeMap })
+  } catch (err) {
+    res.json({ sizes: {} })
   }
+})
+
+router.post('/video/info', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'URL is required' });
+
+  try {
+    let finalUrl = url;
+    try {
+      const parsed = new URL(url);
+      const listId = parsed.searchParams.get('list');
+      if (listId) {
+        finalUrl = `https://www.youtube.com/playlist?list=${listId}`;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    const info = await youtubedl(finalUrl, {
+      dumpSingleJson: true,
+      flatPlaylist: true,
+      ignoreErrors: true,
+      noWarnings: true
+    });
+
+    res.json(info);
+  } catch (err) {
+    console.error('Info error:', err);
+    res.status(500).json({ error: 'Failed to fetch video information. Ensure the URL is valid.' });
+  }
+});
+
+router.post('/video/download', async (req, res) => {
+  const { url, downloadFormat = 'best', jobId } = req.body
+  if (!url) return res.status(400).json({ error: 'URL is required' })
+  if (!jobId) return res.status(400).json({ error: 'jobId is required' })
+
+  videoJobs.set(jobId, { type: 'download', status: 'processing', progress: 0, dlInfo: '' })
+  saveJobs()
+  res.json({ message: 'Download started', jobId })
+
+  // Process asynchronously using spawn for real-time progress
+  ;(async () => {
+    try {
+      const { spawn } = await import('child_process')
+      const { createRequire } = await import('module')
+      const require = createRequire(import.meta.url)
+      const isAudio = downloadFormat === 'mp3'
+      const isWebm = downloadFormat.endsWith('-webm')
+      const ext = isAudio ? 'mp3' : (isWebm ? 'webm' : 'mp4')
+      const filename = `video_${Date.now()}.${ext}`
+      const filepath = path.join(tmpdir(), filename)
+
+      const ytdlpBin = path.join(path.dirname(require.resolve('youtube-dl-exec')), '..', 'bin', 'yt-dlp.exe')
+      const args = getDownloadArgs(url, downloadFormat, filepath)
+
+      await new Promise((resolve, reject) => {
+        const proc = spawn(ytdlpBin, args, { windowsHide: true })
+        let stderrData = ''
+
+        const parseOutput = (text) => {
+          const lines = text.replace(/\r/g, '\n').split('\n')
+          for (const line of lines) {
+            const trimmedLine = line.trim()
+            if (!trimmedLine) continue
+            
+            const pctMatch = trimmedLine.match(/\[download\]\s+([\d.]+)%\s+of\s+(.+?)(?:\s+at\s+(.+?))?(?:\s+ETA\s+(.+))?\s*$/)
+            if (pctMatch) {
+              const pct = parseFloat(pctMatch[1])
+              const totalSize = pctMatch[2]?.trim() || ''
+              const speed = pctMatch[3]?.trim() || ''
+              const eta = pctMatch[4]?.trim() || ''
+              const job = videoJobs.get(jobId)
+              if (job && job.status === 'processing') {
+                job.progress = Math.min(Math.floor(pct), 99)
+                job.totalSize = totalSize
+                job.speed = speed
+                job.eta = eta
+                job.dlInfo = [totalSize, speed, eta ? `ETA ${eta}` : ''].filter(Boolean).join(' | ')
+                videoJobs.set(jobId, job)
+              }
+            }
+            if (trimmedLine.includes('[Merger]') || trimmedLine.includes('[ffmpeg]') || trimmedLine.includes('Merging')) {
+              const job = videoJobs.get(jobId)
+              if (job && job.status === 'processing') {
+                job.progress = 99
+                job.dlInfo = 'Merging audio and video...'
+                videoJobs.set(jobId, job)
+              }
+            }
+          }
+        }
+
+        proc.stdout.on('data', (chunk) => parseOutput(chunk.toString()))
+        proc.stderr.on('data', (chunk) => {
+          const text = chunk.toString()
+          stderrData += text
+          parseOutput(text)
+        })
+
+        proc.on('close', (code) => {
+          if (code === 0) resolve()
+          else reject(new Error(stderrData || `yt-dlp exited with code ${code}`))
+        })
+
+        proc.on('error', (err) => reject(err))
+      })
+
+      if (!existsSync(filepath)) {
+        throw new Error('Video downloaded but output file not found.')
+      }
+
+      videoJobs.set(jobId, { status: 'done', resultPath: filepath, filename, progress: 100, dlInfo: '' })
+      saveJobs()
+    } catch (err) {
+      console.error('Download error:', err)
+      const msg = err.message || 'Failed to download video.'
+      videoJobs.set(jobId, { status: 'error', error: msg })
+      saveJobs()
+    }
+  })()
 })
 
 router.post('/video/compress', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Please upload a video file to compress.' })
-    const { quality = '480p', jobId, duration } = req.body
+    const { quality = '480p', jobId, duration, speed = 'ultrafast', removeAudio = 'false', outFormat = 'mp4' } = req.body
+    if (!jobId) return res.status(400).json({ error: 'jobId is required' })
 
-    const inputPath = path.join(tmpdir(), `input_${Date.now()}.mp4`)
-    const outputPath = path.join(tmpdir(), `compressed_${Date.now()}.mp4`)
-    await writeFile(inputPath, req.file.buffer)
+    const inputPath = req.file.path
+    const isWebm = outFormat === 'webm'
+    const ext = isWebm ? 'webm' : 'mp4'
+    const outputPath = path.join(tmpdir(), `compressed_${Date.now()}.${ext}`)
 
-    if (jobId) jobProgress.set(jobId, { percent: -1, timemark: '00:00:00' })
+    videoJobs.set(jobId, { type: 'compress', status: 'processing', percent: -1, timemark: '00:00:00' })
+    saveJobs()
+    res.json({ message: 'Compression started', jobId })
 
     const totalSeconds = duration ? parseFloat(duration) : null
 
     const qualitySettings = {
       '240p': { res: '426x240', vb: '500k' },
       '360p': { res: '640x360', vb: '800k' },
-      '480p': { res: '854x480', vb: '1000k' },
-      '720p': { res: '1280x720', vb: '2000k' },
-      '1080p': { res: '1920x1080', vb: '4000k' },
+      '480p': { res: '854x480', vb: '1200k' },
+      '720p': { res: '1280x720', vb: '2500k' },
+      '1080p': { res: '1920x1080', vb: '5000k' }
     }
 
     const qs = qualitySettings[quality] || qualitySettings['480p']
+    const noAudio = removeAudio === 'true'
 
-    await new Promise((resolve, reject) => {
+    const outputOpts = [
+      '-y',
+      isWebm ? '-c:v libvpx-vp9' : '-c:v libx264',
+      `-preset ${speed}`, // ultrafast, fast, medium, slow
+      isWebm ? '-crf 30' : '-crf 23',
+      `-b:v ${qs.vb}`,
+      `-s ${qs.res}`
+    ]
+
+    if (noAudio) {
+      outputOpts.push('-an')
+    } else {
+      outputOpts.push(isWebm ? '-c:a libopus' : '-c:a aac', '-b:a 128k')
+    }
+
+    if (!isWebm) {
+      outputOpts.push('-movflags +faststart')
+    }
+
+    const originalname = req.file.originalname || `video${isWebm ? '.webm' : '.mp4'}`
+    const baseName = originalname.substring(0, originalname.lastIndexOf('.')) || originalname
+    const compressedFilename = `compressed_${baseName}${extName}`
+
+    // Process asynchronously
+    ;(async () => {
       ffmpeg(inputPath)
-        .outputOptions([
-          '-y',
-          '-c:v libx264',
-          '-preset ultrafast',
-          '-crf 23',
-          `-b:v ${qs.vb}`,
-          `-s ${qs.res}`,
-          '-c:a aac',
-          '-b:a 128k',
-          '-movflags +faststart'
-        ])
+        .outputOptions(outputOpts)
         .on('progress', (progress) => {
-          if (jobId) {
-            let p = jobProgress.get(jobId) || { percent: -1, timemark: '00:00:00' }
-            
-            // Try to calculate percentage manually if duration is provided
-            if (progress.timemark) {
-              p.timemark = progress.timemark
-              if (totalSeconds && totalSeconds > 0) {
-                const parts = progress.timemark.split(':')
-                if (parts.length === 3) {
-                  const h = parseFloat(parts[0]) || 0
-                  const m = parseFloat(parts[1]) || 0
-                  const s = parseFloat(parts[2]) || 0
-                  const currentSeconds = (h * 3600) + (m * 60) + s
-                  progress.percent = (currentSeconds / totalSeconds) * 100
-                }
+          let p = videoJobs.get(jobId) || { status: 'processing', percent: -1, timemark: '00:00:00' }
+          
+          if (progress.timemark) {
+            p.timemark = progress.timemark
+            if (totalSeconds && totalSeconds > 0) {
+              const parts = progress.timemark.split(':')
+              if (parts.length === 3) {
+                const h = parseFloat(parts[0]) || 0
+                const m = parseFloat(parts[1]) || 0
+                const s = parseFloat(parts[2]) || 0
+                const currentSeconds = (h * 3600) + (m * 60) + s
+                progress.percent = (currentSeconds / totalSeconds) * 100
               }
             }
-
-            if (progress.percent !== undefined && !isNaN(progress.percent)) {
-              let pct = Math.floor(progress.percent)
-              if (pct < 0) pct = 0
-              if (pct > 99) pct = 99
-              p.percent = pct
-            }
-            
-            jobProgress.set(jobId, p)
           }
+
+          if (progress.percent !== undefined && !isNaN(progress.percent)) {
+            let pct = Math.floor(progress.percent)
+            if (pct < 0) pct = 0
+            if (pct > 99) pct = 99
+            p.percent = pct
+          }
+          
+          videoJobs.set(jobId, p)
         })
         .on('end', () => {
-          if (jobId) jobProgress.set(jobId, { percent: 100, timemark: 'Done' })
-          resolve()
+          videoJobs.set(jobId, { status: 'done', resultPath: outputPath, filename: compressedFilename, percent: 100, timemark: 'Done' })
+          saveJobs()
+          unlink(inputPath).catch(console.error)
         })
         .on('error', (err) => {
-          if (jobId) jobProgress.delete(jobId)
-          reject(err)
+          console.error('Compress error:', err)
+          videoJobs.set(jobId, { status: 'error', error: 'FFmpeg compression failed.' })
+          saveJobs()
+          unlink(inputPath).catch(console.error)
         })
         .save(outputPath)
-    })
+    })()
 
-    const originalname = req.file.originalname || 'video.mp4'
-    const compressedFilename = `compressed_${originalname}`
-
-    res.download(outputPath, compressedFilename, async (err) => {
-      if (jobId) jobProgress.delete(jobId)
-      await unlink(inputPath).catch(console.error)
-      if (!err) {
-        await unlink(outputPath).catch(console.error)
-      }
-    })
   } catch (error) {
-    console.error('Video compress error:', error)
-    res.status(500).json({ error: 'Failed to compress video' })
+    console.error('Upload error:', error)
+    res.status(500).json({ error: 'Failed to start video compression.' })
   }
+})
+
+// Error handler for Multer and other middleware errors
+router.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'File is too large. Maximum size is 500MB.' })
+    }
+    return res.status(400).json({ error: err.message })
+  }
+  next(err)
 })
 
 export default router

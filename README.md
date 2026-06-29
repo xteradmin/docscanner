@@ -25,8 +25,8 @@ The home page provides a categorized list of available utilities:
 3. **Compress Image**: Compress images by lowering visual quality or converting between JPEG/WebP formats with live previews and estimated file size.
 
 **Video Tools**
-1. **Download Video**: Download videos directly from supported platforms via URL (requires `youtube-dl-exec`).
-2. **Compress Video**: Reduce video file size by adjusting resolution and bitrate (requires `fluent-ffmpeg`).
+1. **Download Video**: Download videos directly from supported platforms via URL. For playlists, it fetches metadata and allows downloading individual videos or batch queueing with a "Download All" option. Displays real-time download speed, file size, and ETA progress.
+2. **Compress Video**: Reduce video file size by adjusting resolution and bitrate (requires `fluent-ffmpeg`). Supports uploading large files with no limit and tracking compression frame rate progress.
 
 ## Implemented Features
 
@@ -44,7 +44,7 @@ The home page provides a categorized list of available utilities:
 - **Tools page** as the new home (`/`) providing a categorized selection of tools:
   - **PDF Tools**: Includes Combine, Split, and Compress (server-side utilities).
   - **Image Tools**: Includes the main DocScanner interface (`/scanner`), Resize Image (Canvas API), and Compress Image (Canvas API with live previews).
-  - **Video Tools**: Includes Download Video and Compress Video (server-side using `youtube-dl-exec` and `fluent-ffmpeg`).
+  - **Video Tools**: Includes Download Video (with live CLI progress parsing, selective playlist video queues, and automated browser-level download triggers) and Compress Video (supporting large file storage and conversion with custom speed presets).
 
 
 ## Performance & Optimizations
