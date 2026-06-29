@@ -24,6 +24,10 @@ The home page provides a categorized list of available utilities:
 2. **Resize Image**: Resize an image by specifying exact width and height or maintaining aspect ratio. 
 3. **Compress Image**: Compress images by lowering visual quality or converting between JPEG/WebP formats with live previews and estimated file size.
 
+**Video Tools**
+1. **Download Video**: Download videos directly from supported platforms via URL. For playlists, it fetches metadata and allows downloading individual videos or batch queueing with a "Download All" option. Displays real-time download speed, file size, and ETA progress.
+2. **Compress Video**: Reduce video file size by adjusting resolution and bitrate (requires `fluent-ffmpeg`). Supports uploading large files with no limit and tracking compression frame rate progress.
+
 ## Implemented Features
 
 - Camera capture using the browser MediaDevices API with rear-camera preference on mobile.
@@ -40,6 +44,7 @@ The home page provides a categorized list of available utilities:
 - **Tools page** as the new home (`/`) providing a categorized selection of tools:
   - **PDF Tools**: Includes Combine, Split, and Compress (server-side utilities).
   - **Image Tools**: Includes the main DocScanner interface (`/scanner`), Resize Image (Canvas API), and Compress Image (Canvas API with live previews).
+  - **Video Tools**: Includes Download Video (with live CLI progress parsing, selective playlist video queues, and automated browser-level download triggers) and Compress Video (supporting large file storage and conversion with custom speed presets).
 
 
 ## Performance & Optimizations
@@ -63,6 +68,19 @@ cd client && npm install
 cd ../server && npm install
 cd ..
 ```
+
+### System Prerequisites for Video Tools
+
+The backend video download utility utilizes `yt-dlp` under the hood, which may fallback to Python if a standalone binary isn't perfectly supported on the host OS. (Note: **FFmpeg** is bundled automatically via the `ffmpeg-static` npm package, so you do *not* need to install it manually!)
+
+**Windows Laptops:**
+1. **Python3**: Download from [python.org](https://www.python.org/downloads/) or the Microsoft Store.
+
+**macOS / Linux:**
+- macOS: `brew install python3`
+- Ubuntu/Debian: `sudo apt-get install -y python3`
+
+*(Note: If you run the app via Docker, Python is automatically installed inside the container without any manual setup needed.)*
 
 Run the app from the repository root:
 

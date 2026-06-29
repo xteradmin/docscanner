@@ -11,6 +11,9 @@ RUN npm run build
 FROM node:20-alpine
 WORKDIR /app
 
+# Install system dependencies required for video download fallback (python3)
+RUN apk add --no-cache python3
+
 COPY server/package*.json ./
 RUN npm ci --omit=dev
 
