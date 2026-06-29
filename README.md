@@ -25,7 +25,7 @@ The home page provides a categorized list of available utilities:
 3. **Compress Image**: Compress images by lowering visual quality or converting between JPEG/WebP formats with live previews and estimated file size.
 
 **Video Tools**
-1. **Download Video**: Download videos directly from supported platforms via URL. For playlists, it fetches metadata and allows downloading individual videos or batch queueing with a "Download All" option. Displays real-time download speed, file size, and ETA progress.
+1. **Download Video**: Download videos directly from supported platforms via URL. For playlists, it fetches metadata and allows downloading individual videos or batch queueing with a "Download All" option. Displays real-time download speed, file size, and ETA progress. Estimated file sizes are shown before downloading. Downloads survive page refresh via localStorage and server-side job persistence. Temporary files are automatically cleaned up after 24 hours.
 2. **Compress Video**: Reduce video file size by adjusting resolution and bitrate (requires `fluent-ffmpeg`). Supports uploading large files with no limit and tracking compression frame rate progress.
 
 ## Implemented Features
@@ -126,7 +126,7 @@ The Docker image builds the Vite client, installs the Express server runtime dep
 
 ### Server modules
 
-- `api/`: mounted Express routes for `/api/health`, `/api/pdf/generate`, `/api/pdf/merge`, `/api/pdf/split`, `/api/pdf/compress`, and `/api/documents`.
+- `api/`: mounted Express routes for `/api/health`, `/api/pdf/generate`, `/api/pdf/merge`, `/api/pdf/split`, `/api/pdf/compress`, `/api/documents`, `/api/video/info`, `/api/video/download`, `/api/video/size`, `/api/video/sizes`, `/api/video/compress`, and `/api/video/job/:jobId`. Includes automatic temp file cleanup (files older than 24 hours are removed hourly).
 - `auth/`: planned server auth module, not currently implemented as runtime routes.
 - `pdf/`: planned extracted PDF service; current PDF logic lives in `server/src/modules/api/index.js`.
 - `storage/`: planned extracted storage service; current document route only creates a directory and returns metadata.
